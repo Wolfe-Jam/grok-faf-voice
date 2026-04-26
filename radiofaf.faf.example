@@ -1,0 +1,12 @@
+faf_version: "4.1+"
+project: "RadioFAF — Co-Created AI Radio with Grok"
+tagline: "Persistent Soul State for Grok Voice"
+core_goals:
+  - Co-create episodes with Grok
+  - Zero drift across Mac + voice
+  - Nelly singing journey
+memory_etch:
+  - "Episode 13: Nelly Wants to Sing — wobbles success"
+persistent_slots:
+  current_episode: "14 (Nelly Levels Up)"
+  nelly_progress: "Singing unlocked"

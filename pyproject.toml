@@ -1,0 +1,19 @@
+[project]
+name = "grok-faf-voice"
+version = "0.2.0"
+description = "Persistent Soul State for Grok Voice — FAF-powered eternal memory via LiveKit cascaded pipeline."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "livekit-agents[xai]>=1.4",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+]
+
+[project.scripts]
+radiofaf-crew = "grok_faf_voice.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/wolfejam/grok-faf-voice"
+Repository = "https://github.com/wolfejam/grok-faf-voice"
