@@ -1,18 +1,18 @@
 # grok-faf-voice
 
-**Persistent Soul State for Grok Voice**
+**Persistent context for Grok Voice. LiveKit enabled.**
 
-The official FAF backend for Grok Voice.  
-Eternal memory for RadioFAF crews, agents, and any voice workflow.  
-Nelly never forgets. Zero drift across Mac + mobile.
+One import. Done.
 
-```bash
-uv add grok-faf-voice
-radiofaf-crew --crew
+Grok calls it **eternal soul state.**
+What it means: memory that survives sessions, devices, model switches, even reinstalls.
 
-Built with  for the Grok Voice ecosystem. Not officially affiliated with xAI.
-From the Makers of grok-faf-mcp, Grok’s first ever MCP.Companion to FAF-Voice (multi-model frontend).FeaturesLoads full .faf soul state on every session (<50ms)
-Live “Etch this: …” persistence
-Multi-voice RadioFAF crew (Nelly + Leo + Eve + Ara + Rex)
-Expressive TTS tags for singing/wobbles
-Robust testing + Docker + LiveKit Cloud ready
+---
+
+> Status: under active rebuild. v0.2.0 scaffolding is being replaced. Watch this space.
+
+From the Makers of [grok-faf-mcp](https://github.com/Wolfe-Jam/grok-faf-mcp), Grok's first ever MCP.
+
+Companion to [FAF-Voice](https://github.com/Wolfe-Jam/FAF-Voice) — the multi-model frontend.
+
+Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI.
