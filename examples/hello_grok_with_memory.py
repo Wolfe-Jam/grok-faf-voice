@@ -12,11 +12,15 @@ a console-mode voice session that knows your project context from
 the first word.
 """
 
+from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession
 from livekit.plugins import xai
 
 from grok_faf_voice import FAFContext
+
+# Load env vars from .env (XAI_API_KEY, LIVEKIT_*)
+load_dotenv()
 
 # Local file — auto-detected. Or pass a MCPaaS slug like "my-project".
 faf = FAFContext("project.faf")

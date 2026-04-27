@@ -21,11 +21,15 @@ soul on MCPaaS — across sessions, devices, model switches.
 
 import os
 
+from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession
 from livekit.plugins import xai
 
 from grok_faf_voice import FAFContext, FAFMemory
+
+# Load env vars from .env (XAI_API_KEY, LIVEKIT_*, MCPAAS_TOKEN)
+load_dotenv()
 
 # Static project DNA — auto-detect file or MCPaaS slug
 faf = FAFContext("project.faf")
