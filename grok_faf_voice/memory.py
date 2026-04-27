@@ -28,6 +28,14 @@ from grok_faf_voice.scratchpad import Scratchpad
 MCPAAS_URL = "https://mcpaas.live/mcp"
 
 
+class FAFAuthRequiredError(RuntimeError):
+    """Raised when an op requires an MCPaaS token but none is configured.
+
+    The friendly message guides the dev to the Voice key flow without
+    raising a low-level ToolError or surfacing implementation details.
+    """
+
+
 class FAFMemory:
     """Live voice memory for a Grok Voice agent.
 
@@ -96,17 +104,29 @@ class FAFMemory:
         """Write an entry to the eternal soul via MCPaaS write_soul.
 
         Returns the server's confirmation message text.
-        Raises `fastmcp.exceptions.ToolError` on invalid soul or auth.
+
+        Raises
+        ------
+        FAFAuthRequiredError
+            No token is set (constructor arg or `MCPAAS_TOKEN` env). Etch
+            requires a Voice key. Friendly upgrade prompt included.
+        fastmcp.exceptions.ToolError
+            For server-side errors (invalid soul, etc.).
         """
+        if not self._token:
+            raise FAFAuthRequiredError(
+                "To save memories, get your free Voice key — coming soon. "
+                "For now, FAFMemory.get() works read-only against public souls."
+            )
+
         args: dict[str, Any] = {
             "soul": self._soul,
             "entry": entry,
             "type": type,
+            "token": self._token,
         }
         if tags:
             args["tags"] = tags
-        if self._token:
-            args["token"] = self._token
 
         async with Client(self._mcp_url) as client:
             result = await client.call_tool("write_soul", args)

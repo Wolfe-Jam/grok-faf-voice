@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 def make_etch_tool(mem: FAFMemory):
     """Return an @function_tool that etches voice content to FAFMemory."""
+    from grok_faf_voice.memory import FAFAuthRequiredError
 
     @function_tool
     async def etch_memory(context: RunContext, content: str) -> str:
@@ -35,8 +36,11 @@ def make_etch_tool(mem: FAFMemory):
         The content will survive across sessions, devices, and
         model switches.
         """
-        await mem.etch(content, type="memory")
-        return f"Etched: {content}"
+        try:
+            await mem.etch(content, type="memory")
+            return f"Etched: {content}"
+        except FAFAuthRequiredError as e:
+            return str(e)
 
     return etch_memory
 

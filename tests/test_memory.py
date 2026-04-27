@@ -158,32 +158,45 @@ async def test_get_payload_shape_mocked():
     assert result == "soul body here"
 
 
-async def test_etch_omits_token_when_none():
-    """When no token is set, etch() must NOT include the token field."""
+async def test_etch_raises_auth_error_when_no_token():
+    """Without a token, etch() raises FAFAuthRequiredError with the
+    friendly 'coming soon' guidance. Does not attempt to write.
+    """
+    from grok_faf_voice import FAFAuthRequiredError
+
     with patch.dict(os.environ, {}, clear=True):
         mem = FAFMemory("grok")
 
-        captured: dict = {}
-
-        class FakeResult:
-            is_error = False
-            content = [type("TC", (), {"text": "ok"})()]
-
-        class FakeClient:
+        # If the Client gets called, the test fails — the auth check
+        # must happen BEFORE any network attempt.
+        class TripwireClient:
             def __init__(self, url):
-                pass
+                raise AssertionError(
+                    "Client should not be constructed when no token"
+                )
 
-            async def __aenter__(self):
-                return self
+        with patch("grok_faf_voice.memory.Client", TripwireClient):
+            with pytest.raises(FAFAuthRequiredError) as exc_info:
+                await mem.etch("hello")
 
-            async def __aexit__(self, *args):
-                return None
+        # The error message must guide the dev to the Voice key flow.
+        assert "Voice key" in str(exc_info.value)
 
-            async def call_tool(self, name, args):
-                captured["args"] = args
-                return FakeResult()
 
-        with patch("grok_faf_voice.memory.Client", FakeClient):
-            await mem.etch("hello")
+async def test_etch_tool_returns_friendly_message_when_no_token():
+    """The @function_tool wrapper should catch FAFAuthRequiredError
+    and return the friendly text — never a Python traceback to the
+    realtime model.
+    """
+    from grok_faf_voice.tools import make_etch_tool
 
-        assert "token" not in captured["args"]
+    with patch.dict(os.environ, {}, clear=True):
+        mem = FAFMemory("grok")
+        tool = make_etch_tool(mem)
+
+        # FunctionTool wraps the original; we invoke the underlying
+        # callable directly via .__wrapped__ if exposed, else via .info.
+        callable_fn = getattr(tool, "__wrapped__", None) or tool.info.callable
+        result = await callable_fn(None, "hello")
+
+        assert "Voice key" in result
