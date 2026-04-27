@@ -33,6 +33,7 @@ primitives:
 | **Smart Merge Engine** | Promotes scratchpad → permanent soul on session end, LLM-judged |
 | **Session Ledger** | Auditable record of every merge attempt, idempotent retries |
 | **Cross-session resumption** | Silently retries unfinished merges from prior sessions |
+| **Soul → prompt bridge** | Pre-loads prior soul into the agent's instructions so it opens with continuity |
 | **Context Bus** | Async pub/sub over voice-memory events — the right hooks at the right moments |
 
 ---
@@ -127,8 +128,17 @@ async def entrypoint(ctx: agents.JobContext):
             },
         ),
     )
+    # Pull prior soul into the system prompt so the agent opens with
+    # continuity — knowing what was etched in past sessions. Falls back
+    # gracefully ("first session" message) if the soul is empty.
+    prior_context = await mem.recall_for_prompt()
+
     agent = Agent(
-        instructions=f"{faf.system_prompt()}\n\n{LATENCY_BRIDGE_INSTRUCTIONS}",
+        instructions=(
+            f"{faf.system_prompt()}\n\n"
+            f"{prior_context}\n\n"
+            f"{LATENCY_BRIDGE_INSTRUCTIONS}"
+        ),
         tools=mem.tools(session),  # etch + recall + paralinguistic + merge_now
     )
 

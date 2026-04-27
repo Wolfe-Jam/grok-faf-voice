@@ -5,6 +5,44 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.12] — 2026-04-27
+
+### Added — soul → prompt bridge
+
+Persistence and recall were already shipped, but the agent never had
+the soul *loaded into its context* at session start. It could call
+``recall_memory`` on demand, but a fresh session opened blind unless
+the user asked. This release closes that gap.
+
+- ``FAFMemory.recall_for_prompt(*, header, empty_message)`` — async
+  method that fetches the soul and returns a string ready for direct
+  injection into Agent instructions. Strips the MCPaaS server preamble
+  (everything before the first ``\n---\n``) so only the soul body
+  lands in the prompt. Returns the configurable ``empty_message`` on
+  empty soul or read failure — never raises.
+- The example pre-fetches ``await mem.recall_for_prompt()`` BEFORE
+  ``Agent(...)`` and concatenates it into instructions alongside
+  ``faf.system_prompt()`` and ``LATENCY_BRIDGE_INSTRUCTIONS``.
+
+### Changed — `@pytest.mark.network` skip-by-default
+
+Network-marked tests round-trip live against MCPaaS, which writes
+entries into the production soul. Running ``pytest -q`` now skips
+them by default to keep dev runs from polluting shared state.
+
+- New ``--run-network`` flag in ``tests/conftest.py``. Default
+  behavior: skip; opt in with ``pytest --run-network``.
+- ``pytest -q``: 112 passed, 3 skipped (the network round-trips).
+- ``pytest --run-network``: full suite runs against live MCPaaS.
+
+### Tests
+
+- 112 / 112 passing locally (was 111). 4 new tests cover
+  ``recall_for_prompt``: server-preamble stripping, empty-soul
+  fallback, recall-failure graceful degradation, custom header text.
+
+---
+
 ## [0.0.11] — 2026-04-27
 
 ### Fixed — `attach_auto_merge` signature
@@ -274,6 +312,7 @@ gate.
 
 ---
 
+[0.0.12]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.8...v0.0.9

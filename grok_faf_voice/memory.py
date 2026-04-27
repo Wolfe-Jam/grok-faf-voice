@@ -795,6 +795,75 @@ class FAFMemory:
         await self._bus.emit_session_resumed(summary)
         return summary
 
+    async def recall_for_prompt(
+        self,
+        *,
+        header: str = "What you know about this user from prior sessions",
+        empty_message: str = (
+            "This is your first session with this user. "
+            "Use the etch_memory tool to save notable facts as the "
+            "conversation unfolds."
+        ),
+    ) -> str:
+        """Return a formatted recall block ready for system-prompt injection.
+
+        Fetches the live soul body and wraps it with a header so the
+        model treats it as prior context. When the soul is empty or the
+        read fails (no token, network blip, ledger gap), returns the
+        ``empty_message`` so the agent still opens cleanly — never raises.
+
+        The caller composes this into the Agent's instructions::
+
+            agent = Agent(
+                instructions=(
+                    f"{faf.system_prompt()}\\n\\n"
+                    f"{await mem.recall_for_prompt()}\\n\\n"
+                    f"{LATENCY_BRIDGE_INSTRUCTIONS}"
+                ),
+                tools=mem.tools(session),
+            )
+
+        This is the bridge between persistent soul state and the
+        in-context state the realtime model actually sees. Without it,
+        the SDK persists memories perfectly but the agent opens each
+        session blind.
+
+        Parameters
+        ----------
+        header : str
+            Title text rendered above the soul body. Tune for tone if
+            you want a warmer or colder open.
+        empty_message : str
+            Returned verbatim when the soul has no content yet.
+
+        Returns
+        -------
+        str
+            Either ``"<header>:\\n<body>"`` or ``empty_message``.
+            Always safe to inline into instructions.
+        """
+        try:
+            body = await self.get()
+        except FAFRecallError:
+            return empty_message
+        except Exception:  # noqa: BLE001
+            # Read failures (network, etc.) must not block the agent
+            # from starting. Degrade silently to the empty path.
+            return empty_message
+
+        # Strip MCPaaS server preamble (everything before the first
+        # ``\n---\n`` separator) so only the soul body lands in the
+        # prompt. If no separator is present, use the whole text.
+        sep = "\n---\n"
+        if sep in body:
+            body = body.split(sep, 1)[1]
+
+        body = body.strip()
+        if not body:
+            return empty_message
+
+        return f"{header}:\n{body}"
+
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
 

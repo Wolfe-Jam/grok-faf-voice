@@ -476,6 +476,143 @@ soul:
     assert summary == ""
 
 
+# ---- recall_for_prompt — soul → instructions bridge ----
+
+
+async def test_recall_for_prompt_strips_server_preamble():
+    """recall_for_prompt() drops the MCPaaS preamble (everything before
+    the first ``---``) so only the soul body lands in the prompt.
+    """
+    mem = FAFMemory("grok")
+
+    fake_soul = (
+        "/grok loaded, what next?\n"
+        "\n"
+        "---\n"
+        "faf: \"2.0\"\n"
+        "type: soul\n"
+        "soul:\n"
+        "  name: grok\n"
+        "  title: \"Grok Integration\"\n"
+        "Memory:\n"
+        "• User shipped version 0.0.11 today.\n"
+    )
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": fake_soul})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        block = await mem.recall_for_prompt()
+
+    assert "What you know about this user from prior sessions:" in block
+    assert "/grok loaded, what next?" not in block, (
+        "server preamble must not bleed into the prompt"
+    )
+    assert "Memory:" in block
+    assert "shipped version 0.0.11" in block
+
+
+async def test_recall_for_prompt_returns_empty_message_on_empty_soul():
+    """Empty soul body → caller-supplied empty_message, not a crash."""
+    mem = FAFMemory("grok")
+
+    fake_soul = "/grok loaded, what next?\n\n---\n   \n"
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": fake_soul})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        block = await mem.recall_for_prompt()
+
+    assert "first session" in block
+    assert "etch_memory" in block
+
+
+async def test_recall_for_prompt_returns_empty_message_on_recall_error():
+    """Soul read failures degrade silently — agent still opens cleanly."""
+    from fastmcp.exceptions import ToolError
+
+    mem = FAFMemory("grok")
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            raise ToolError("Soul service unreachable")
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        block = await mem.recall_for_prompt(
+            empty_message="custom-fallback-text"
+        )
+
+    assert block == "custom-fallback-text"
+
+
+async def test_recall_for_prompt_custom_header():
+    """Caller can tune the header text for tone."""
+    mem = FAFMemory("grok")
+
+    fake_soul = "/grok loaded\n\n---\nMemory:\n• Anchor fact.\n"
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": fake_soul})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        block = await mem.recall_for_prompt(header="Prior context with James")
+
+    assert block.startswith("Prior context with James:\n")
+    assert "Anchor fact" in block
+
+
 # ---- Smart Merge Engine ----
 
 
