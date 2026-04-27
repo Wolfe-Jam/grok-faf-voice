@@ -5,6 +5,57 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] — 2026-04-27
+
+### Added — global tool bus middleware
+
+Bus coverage for **every** tool the agent runs, not just FAFMemory's
+own. User-defined tools added to the agent's `tools=[]` list now fire
+`bus.tool.about_to_run` + `bus.tool.completed` automatically — no
+per-tool wrapping required.
+
+- `enable_global_tool_bus(memory, agent)` — call once after Agent
+  construction. Wraps every tool in `agent.tools` by mutating the
+  underlying callable in place, preserving LiveKit `FunctionTool`
+  metadata (`info.name`, `info.description`).
+- Idempotent: tools tagged `_bus_wrapped=True` (the four FAFMemory
+  factory outputs, or anything previously wrapped) are skipped.
+  Calling `enable_global_tool_bus` twice is a safe no-op.
+- Patches `agent.update_tools` so tools registered later via
+  runtime tool updates are also wrapped automatically. The patch
+  itself is idempotent — second call to `enable_global_tool_bus`
+  doesn't re-wrap `update_tools`.
+- `tool.completed` payload now includes `success: bool` (True on
+  return, False on raised exception) plus `result` or `error`.
+- Exceptions from wrapped tools are re-raised so LiveKit's error
+  handling is preserved.
+
+### Changed
+
+- The four FAFMemory factories (`make_etch_tool`, `make_recall_tool`,
+  `make_paralinguistic_tool`, `make_merge_tool`) no longer emit
+  generic `tool.about_to_run` / `tool.completed` from inside their
+  bodies — that's the global wrapper's job. Domain-specific events
+  (`soul.updated` from `mem.etch`, `paralinguistic.detected` from
+  `make_paralinguistic_tool`, `merge.starting` + `merge.completed`
+  from `make_merge_tool`) are still emitted from inside the factory
+  bodies so they fire even without `enable_global_tool_bus`.
+- Factory output is tagged `_bus_wrapped=True` so the global wrapper
+  skips re-wrapping FAFMemory tools (clean separation: generic tool
+  events = global wrapper's job, domain events = per-factory's job).
+
+### Tests
+
+- 110 / 110 passing (was 102). 8 new tests cover global wrapper
+  pre/post emission, error path with success=False + re-raise,
+  factory tools skipped via `_bus_wrapped`, idempotent double call,
+  metadata preservation (`info.name` + `info.description`),
+  `update_tools` patched for future additions, `update_tools` patch
+  itself idempotent, factory domain-events still fire after global
+  wrap.
+
+---
+
 ## [0.0.9] — 2026-04-27
 
 ### Added — Context Bus
@@ -199,6 +250,7 @@ gate.
 
 ---
 
+[0.0.10]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.6...v0.0.7

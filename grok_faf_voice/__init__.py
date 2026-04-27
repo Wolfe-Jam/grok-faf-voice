@@ -33,8 +33,9 @@ from grok_faf_voice.memory import (
     FAFRecallError,
 )
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
+from grok_faf_voice.tools import enable_global_tool_bus
 
-__version__ = "0.0.9"
+__version__ = "0.0.10"
 __all__ = [
     "BusEvent",
     "BusEventPayload",
@@ -52,4 +53,5 @@ __all__ = [
     "Scratchpad",
     "ScratchpadEntry",
     "VoiceSessionLedger",
+    "enable_global_tool_bus",
 ]

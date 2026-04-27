@@ -31,6 +31,7 @@ from grok_faf_voice import (
     FAFContext,
     FAFMemory,
     InMemoryVoiceSessionLedger,
+    enable_global_tool_bus,
 )
 
 # Load env vars from .env (XAI_API_KEY, LIVEKIT_*, MCPAAS_TOKEN)
@@ -77,6 +78,11 @@ async def entrypoint(ctx: agents.JobContext):
     # paralinguistic detections, etc.). Auto-starts on first emit if you
     # forget, but explicit start is cleaner.
     await mem.start_bus()
+
+    # Give the Bus full visibility over every tool the agent runs —
+    # FAFMemory's own four AND any user-defined tools added later.
+    # Idempotent; safe to call once after Agent construction.
+    enable_global_tool_bus(mem, agent)
 
     # agent.add_shutdown_callback is awaited during graceful shutdown,
     # so the merge runs to completion (or explicit failure) on every

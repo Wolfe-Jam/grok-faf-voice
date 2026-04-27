@@ -64,6 +64,19 @@ await mem.start_bus()
 Sync handlers work too — pass them to `mem.bus.on_sync(event, fn)`.
 Failing handlers are logged but never block the rest of the bus.
 
+To give the Bus full visibility over **every** tool the agent runs —
+FAFMemory's own four AND any user-defined tools — call
+`enable_global_tool_bus(mem, agent)` once after Agent construction.
+Idempotent; built-in tools are tagged so they aren't double-wrapped.
+
+```python
+from grok_faf_voice import enable_global_tool_bus
+
+agent = Agent(instructions=..., tools=mem.tools(session) + user_tools)
+enable_global_tool_bus(mem, agent)
+# Now every tool fires bus.tool.about_to_run + bus.tool.completed
+```
+
 The complete event vocabulary is exported as `BusEvent`:
 
 ```
