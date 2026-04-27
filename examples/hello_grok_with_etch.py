@@ -84,10 +84,10 @@ async def entrypoint(ctx: agents.JobContext):
     # Idempotent; safe to call once after Agent construction.
     enable_global_tool_bus(mem, agent)
 
-    # agent.add_shutdown_callback is awaited during graceful shutdown,
+    # ctx.add_shutdown_callback is awaited during graceful shutdown,
     # so the merge runs to completion (or explicit failure) on every
     # termination path — not fire-and-forget.
-    mem.attach_auto_merge(session, agent, strategy="grok-decides")
+    mem.attach_auto_merge(session, ctx, strategy="grok-decides")
 
     await session.start(room=ctx.room, agent=agent)
 

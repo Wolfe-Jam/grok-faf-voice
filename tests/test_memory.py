@@ -774,9 +774,11 @@ async def test_merge_grok_decides_keeps_undecided_entries_conservative():
 # ----------------------------------------------------------------
 
 
-class _FakeAgent:
-    """Stand-in for livekit.agents.Agent — captures shutdown callbacks
-    so tests can invoke them directly and verify the registered behavior.
+class _FakeJobContext:
+    """Stand-in for livekit.agents.JobContext — captures shutdown
+    callbacks so tests can invoke them directly and verify the
+    registered behavior. ``add_shutdown_callback`` is the real LiveKit
+    API for this hook (it lives on JobContext, not Agent).
     """
 
     def __init__(self) -> None:
@@ -902,12 +904,12 @@ async def test_attach_auto_merge_registers_shutdown_callback():
 
     mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
     session = _FakeAgentSession()
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
-    mem.attach_auto_merge(session, agent)
+    mem.attach_auto_merge(session, ctx)
 
-    assert len(agent.shutdown_callbacks) == 1
-    assert callable(agent.shutdown_callbacks[0])
+    assert len(ctx.shutdown_callbacks) == 1
+    assert callable(ctx.shutdown_callbacks[0])
 
 
 async def test_attach_auto_merge_keeps_session_on_close_for_observability():
@@ -918,9 +920,9 @@ async def test_attach_auto_merge_keeps_session_on_close_for_observability():
 
     mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
     session = _FakeAgentSession()
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
-    mem.attach_auto_merge(session, agent)
+    mem.attach_auto_merge(session, ctx)
 
     assert "close" in session.on_handlers
     assert len(session.on_handlers["close"]) == 1
@@ -935,7 +937,7 @@ async def test_shutdown_callback_logs_completed_to_ledger():
     mem.scratchpad.update("k1", "v1", priority="high")
 
     session = _FakeAgentSession(session_id="sess-shutdown-ok")
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
     class _MockMcpResult:
         is_error = False
@@ -954,8 +956,8 @@ async def test_shutdown_callback_logs_completed_to_ledger():
         async def call_tool(self, name, args):
             return _MockMcpResult()
 
-    mem.attach_auto_merge(session, agent, strategy="heuristic")
-    callback = agent.shutdown_callbacks[0]
+    mem.attach_auto_merge(session, ctx, strategy="heuristic")
+    callback = ctx.shutdown_callbacks[0]
 
     with patch("grok_faf_voice.memory.Client", _MockMcpClient):
         await callback()
@@ -980,13 +982,13 @@ async def test_shutdown_callback_logs_partial_or_failed_on_exception():
     mem.scratchpad.update("k", "v")
 
     session = _FakeAgentSession(session_id="sess-shutdown-fail")
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("etch went sideways")
 
-    mem.attach_auto_merge(session, agent, strategy="heuristic")
-    callback = agent.shutdown_callbacks[0]
+    mem.attach_auto_merge(session, ctx, strategy="heuristic")
+    callback = ctx.shutdown_callbacks[0]
 
     with patch.object(mem, "etch", side_effect=_boom):
         # Must not raise — shutdown completes cleanly.
@@ -1010,10 +1012,10 @@ async def test_shutdown_callback_no_ops_when_merge_already_completed():
     mem._merge_completed_this_session = True  # simulate prior merge_now
 
     session = _FakeAgentSession()
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
-    mem.attach_auto_merge(session, agent)
-    callback = agent.shutdown_callbacks[0]
+    mem.attach_auto_merge(session, ctx)
+    callback = ctx.shutdown_callbacks[0]
 
     await callback()
 
@@ -1031,10 +1033,10 @@ async def test_shutdown_callback_does_not_propagate_unexpected_errors():
 
     mem = FAFMemory("grok", token="t", ledger=_BrokenLedger())
     session = _FakeAgentSession()
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
-    mem.attach_auto_merge(session, agent, strategy="heuristic")
-    callback = agent.shutdown_callbacks[0]
+    mem.attach_auto_merge(session, ctx, strategy="heuristic")
+    callback = ctx.shutdown_callbacks[0]
 
     # Empty scratchpad — merge() succeeds, then ledger.log_merge_attempt raises.
     # The callback's outer try/except routes that into the failure-log path,
@@ -1063,10 +1065,10 @@ async def test_shutdown_callback_handles_session_without_id_attribute():
 
     ledger = InMemoryVoiceSessionLedger()
     mem = FAFMemory("grok", token="t", ledger=ledger)
-    agent = _FakeAgent()
+    ctx = _FakeJobContext()
 
-    mem.attach_auto_merge(_SessionNoId(), agent, strategy="heuristic")
-    callback = agent.shutdown_callbacks[0]
+    mem.attach_auto_merge(_SessionNoId(), ctx, strategy="heuristic")
+    callback = ctx.shutdown_callbacks[0]
 
     await callback()  # empty scratchpad → trivially succeeds
 

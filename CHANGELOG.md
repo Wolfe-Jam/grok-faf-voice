@@ -5,6 +5,30 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] — 2026-04-27
+
+### Fixed — `attach_auto_merge` signature
+
+`Agent.add_shutdown_callback` doesn't exist on LiveKit's actual
+`Agent` class — that method lives on `JobContext`. Surfaced by a real
+manual run; unit tests with a fake agent stand-in passed because the
+fake mocked the API we expected, not the API that exists.
+
+- `attach_auto_merge(session, ctx, *, strategy)` — second positional
+  argument is now `ctx: JobContext` instead of `agent: Agent`. Inside,
+  registers via `ctx.add_shutdown_callback(...)` (the real LiveKit
+  API).
+- Example updated: `mem.attach_auto_merge(session, ctx, strategy=...)`.
+- Test fake renamed `_FakeAgent` → `_FakeJobContext` to make the API
+  surface explicit.
+
+This is a breaking signature change but no public consumers exist
+(repo private, package never on PyPI) — fix is appropriate.
+
+111 / 111 tests still passing. Ruff clean.
+
+---
+
 ## [0.0.10] — 2026-04-27
 
 ### Added — global tool bus middleware
@@ -250,6 +274,7 @@ gate.
 
 ---
 
+[0.0.11]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.7...v0.0.8

@@ -35,7 +35,7 @@ from grok_faf_voice.ledger import NullVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
 if TYPE_CHECKING:
-    from livekit.agents import Agent, AgentSession
+    from livekit.agents import AgentSession, JobContext
 
 MCPAAS_URL = "https://mcpaas.live/mcp"
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
@@ -133,7 +133,7 @@ class FAFMemory:
             ),
         )
         agent = Agent(instructions=ctx.system_prompt(), tools=mem.tools(session))
-        mem.attach_auto_merge(session, agent, strategy="grok-decides")
+        mem.attach_auto_merge(session, ctx, strategy="grok-decides")
     """
 
     def __init__(
@@ -577,17 +577,18 @@ class FAFMemory:
     def attach_auto_merge(
         self,
         session: AgentSession,
-        agent: Agent,
+        ctx: JobContext,
         *,
         strategy: str = "heuristic",
     ) -> None:
         """Register an awaitable shutdown callback that runs ``merge()``.
 
-        Uses ``agent.add_shutdown_callback`` (the load-bearing primitive)
-        rather than ``session.on("close")`` — the worker awaits shutdown
-        callbacks up to ``shutdown_process_timeout`` (~10s default), so a
-        multi-second merge can finish cleanly on every termination path
-        (graceful close, user disconnect, room destroy, worker drain).
+        Uses ``ctx.add_shutdown_callback`` (the load-bearing primitive on
+        the LiveKit ``JobContext``) rather than ``session.on("close")`` —
+        the worker awaits shutdown callbacks up to
+        ``shutdown_process_timeout`` (~10s default), so a multi-second
+        merge can finish cleanly on every termination path (graceful
+        close, user disconnect, room destroy, worker drain).
 
         Composes with explicit ``merge_now``: an async lock + two guard
         flags ensure the shutdown callback no-ops when the user already
@@ -640,7 +641,7 @@ class FAFMemory:
             finally:
                 self._merge_in_progress = False
 
-        agent.add_shutdown_callback(_merge_on_shutdown)
+        ctx.add_shutdown_callback(_merge_on_shutdown)
 
         # Keep on("close") for observability only — never put work here.
         @session.on("close")
