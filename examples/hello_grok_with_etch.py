@@ -46,10 +46,7 @@ server = AgentServer()
 @server.rtc_session()
 async def entrypoint(ctx: agents.JobContext):
     session = AgentSession(
-        llm=xai.realtime.RealtimeModel(
-            voice="Ara",
-            model="grok-voice-think-fast-1.0",
-        ),
+        llm=xai.realtime.RealtimeModel(voice="Ara"),
         instructions=faf.system_prompt(),
         tools=mem.tools(),  # adds etch_memory + recall_memory
     )
