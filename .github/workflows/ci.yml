@@ -1,5 +1,12 @@
 name: CI
 
+# Doctrine (FAF ecosystem):
+#   - "test" job is the ONLY gate. Red here = real, actionable failure.
+#   - Lint runs as continue-on-error (visibility, not a gate).
+#   - Compat matrix runs as continue-on-error (Python version drift = observability).
+#   - Live MCPaaS (network marker) is workflow_dispatch-only.
+# See memory: feedback-ci-lint-never-blocks.md, feedback-red-means-real.md.
+
 on:
   push:
     branches: [main]
@@ -8,12 +15,54 @@ on:
   workflow_dispatch:
 
 jobs:
+  # THE GATE. Single Python, offline tests only. Red = real.
   test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Test (offline, with coverage)
+        run: pytest -v --cov --cov-report=term-missing -m "not network"
+
+  # Advisory only. Reports issues, never blocks the badge.
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Ruff check (advisory)
+        run: ruff check .
+
+  # Observational. Spots Python version drift. Never gates the badge.
+  compat:
+    runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -28,12 +77,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Lint (ruff)
-        run: ruff check .
+      - name: Test (offline)
+        run: pytest -v -m "not network"
 
-      - name: Test (offline, with coverage)
-        run: pytest -v --cov --cov-report=term-missing -m "not network"
-
+  # Live MCPaaS round-trip. Manual trigger only.
   test-network:
     name: Test (live MCPaaS)
     runs-on: ubuntu-latest
