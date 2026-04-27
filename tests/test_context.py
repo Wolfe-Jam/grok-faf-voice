@@ -14,28 +14,23 @@ def test_import():
     assert FAFContext is not None
 
 
-def test_local_file_load(tmp_path: Path):
-    """FAFContext reads a local .faf file."""
-    faf_path = tmp_path / "test.faf"
-    faf_path.write_text("project:\n  name: test\n")
-
-    ctx = FAFContext(str(faf_path))
+def test_local_file_load(tmp_faf_path: Path):
+    """FAFContext reads a local .faf file (uses shared fixture)."""
+    ctx = FAFContext(str(tmp_faf_path))
     content = ctx.load()
 
-    assert "name: test" in content
+    assert "name: test-project" in content
 
 
-def test_system_prompt_returns_string(tmp_path: Path):
+def test_system_prompt_returns_string(tmp_faf_path: Path):
     """system_prompt() returns a string containing the .faf content."""
-    faf_path = tmp_path / "test.faf"
-    faf_path.write_text("project:\n  name: hello\n")
-
-    ctx = FAFContext(str(faf_path))
+    ctx = FAFContext(str(tmp_faf_path))
     prompt = ctx.system_prompt()
 
     assert isinstance(prompt, str)
-    assert "name: hello" in prompt
+    assert "name: test-project" in prompt
     assert "BEGIN .faf" in prompt
+    assert "END .faf" in prompt
 
 
 def test_load_is_idempotent(tmp_path: Path):
