@@ -47,10 +47,14 @@ server = AgentServer()
 async def entrypoint(ctx: agents.JobContext):
     session = AgentSession(
         llm=xai.realtime.RealtimeModel(voice="Ara"),
-        instructions=faf.system_prompt(),
-        tools=mem.tools(),  # adds etch_memory + recall_memory
     )
-    await session.start(room=ctx.room, agent=Agent())
+    await session.start(
+        room=ctx.room,
+        agent=Agent(
+            instructions=faf.system_prompt(),
+            tools=mem.tools(),  # etch_memory + recall_memory
+        ),
+    )
 
 
 if __name__ == "__main__":
