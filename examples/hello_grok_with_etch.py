@@ -79,6 +79,12 @@ async def entrypoint(ctx: agents.JobContext):
 
     await session.start(room=ctx.room, agent=agent)
 
+    # Cross-session resumption (Gate 5): silently retry any merge
+    # attempts that didn't complete in a prior session. The user
+    # only hears about it when severity is high (retry_count ≥ 2 or
+    # many failed entries from a single attempt).
+    await mem.on_session_start(session)
+
 
 if __name__ == "__main__":
     agents.cli.run_app(server)

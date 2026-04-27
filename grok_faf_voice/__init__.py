@@ -16,6 +16,7 @@ Stateless by default. Memory is a tool, not a baseline.
 from grok_faf_voice.context import FAFContext
 from grok_faf_voice.ledger import (
     InMemoryVoiceSessionLedger,
+    MergeAttempt,
     NullVoiceSessionLedger,
     VoiceSessionLedger,
 )
@@ -29,7 +30,7 @@ from grok_faf_voice.memory import (
 )
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 __all__ = [
     "FAFAuthRequiredError",
     "FAFContext",
@@ -39,6 +40,7 @@ __all__ = [
     "FAFRecallError",
     "InMemoryVoiceSessionLedger",
     "LATENCY_BRIDGE_INSTRUCTIONS",
+    "MergeAttempt",
     "NullVoiceSessionLedger",
     "Scratchpad",
     "ScratchpadEntry",

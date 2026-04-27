@@ -8,7 +8,7 @@ against MCPaaS using the `grok` dev soul.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -1233,9 +1233,11 @@ async def test_merge_now_uses_grok_decides_strategy():
 # ----------------------------------------------------------------
 
 
-async def test_null_ledger_log_is_async_no_op():
-    """NullVoiceSessionLedger.log_merge_attempt returns None and never raises,
-    even with arbitrary kwargs. This is the default behavior the SDK relies on.
+async def test_null_ledger_log_returns_id_and_persists_nothing():
+    """NullVoiceSessionLedger.log_merge_attempt returns a fresh id (or
+    echoes the passed merge_attempt_id) and never raises, even with
+    arbitrary kwargs. Persists nothing — the default behavior the SDK
+    relies on for "audit not needed" callers.
     """
     from grok_faf_voice import NullVoiceSessionLedger
 
@@ -1252,7 +1254,19 @@ async def test_null_ledger_log_is_async_no_op():
         # Extra kwargs survive Protocol drift without crashing.
         extra_key="future-field",
     )
-    assert result is None
+    assert isinstance(result, str)
+    assert len(result) >= 16  # uuid-shaped
+
+    # Echoes back when caller provides their own id (idempotency contract).
+    echoed = await led.log_merge_attempt(
+        session_id="x", status="completed", merge_attempt_id="custom-id"
+    )
+    assert echoed == "custom-id"
+
+    # No persistence — get_incomplete_merges always returns empty.
+    assert await led.get_incomplete_merges(soul="grok") == []
+    # mark_merge_resumed never raises.
+    await led.mark_merge_resumed(merge_attempt_id="custom-id")
 
 
 async def test_in_memory_ledger_preserves_order_across_attempts():
@@ -1288,6 +1302,271 @@ async def test_in_memory_ledger_respects_passed_timestamp():
         session_id="x", status="completed", timestamp=fixed
     )
     assert led.attempts[0]["timestamp"] == fixed
+
+
+# ----------------------------------------------------------------
+# Gate 5 — cross-session resumption (Q15d)
+# ----------------------------------------------------------------
+
+
+async def test_in_memory_ledger_idempotent_update_by_id():
+    """Passing merge_attempt_id back to log_merge_attempt UPDATES the
+    existing record instead of creating a duplicate.
+    """
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    first_id = await led.log_merge_attempt(
+        session_id="s1", soul="grok", status="partial_or_failed", promoted=1
+    )
+    assert isinstance(first_id, str)
+    assert len(led.attempts) == 1
+
+    # Same id → in-place update, NOT a new row.
+    same_id = await led.log_merge_attempt(
+        merge_attempt_id=first_id,
+        session_id="s2",
+        soul="grok",
+        status="completed",
+        promoted=2,
+    )
+    assert same_id == first_id
+    assert len(led.attempts) == 1, "idempotent update must not append"
+    assert led.attempts[0]["status"] == "completed"
+    assert led.attempts[0]["promoted"] == 2
+
+
+async def test_get_incomplete_merges_filters_by_soul_and_status():
+    """get_incomplete_merges only returns partial/partial_or_failed for
+    the requested soul. Completed and other-soul records are excluded.
+    """
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    await led.log_merge_attempt(
+        session_id="s1", soul="grok", status="partial_or_failed"
+    )
+    await led.log_merge_attempt(session_id="s2", soul="grok", status="completed")
+    await led.log_merge_attempt(
+        session_id="s3", soul="other-soul", status="partial_or_failed"
+    )
+
+    incomplete = await led.get_incomplete_merges(soul="grok")
+    assert len(incomplete) == 1
+    assert incomplete[0].session_id == "s1"
+
+
+async def test_get_incomplete_merges_respects_age_window():
+    """Records older than max_age_hours are excluded silently."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    old = datetime.now(timezone.utc) - timedelta(hours=100)
+    fresh = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    await led.log_merge_attempt(
+        session_id="old",
+        soul="grok",
+        status="partial_or_failed",
+        timestamp=old,
+    )
+    await led.log_merge_attempt(
+        session_id="fresh",
+        soul="grok",
+        status="partial_or_failed",
+        timestamp=fresh,
+    )
+
+    incomplete = await led.get_incomplete_merges(soul="grok", max_age_hours=72)
+    assert {a.session_id for a in incomplete} == {"fresh"}
+
+
+async def test_mark_merge_resumed_updates_status():
+    """mark_merge_resumed flips status to in_progress (or any passed value)."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    aid = await led.log_merge_attempt(
+        session_id="s", soul="grok", status="partial_or_failed"
+    )
+    await led.mark_merge_resumed(merge_attempt_id=aid)
+    assert led.attempts[0]["status"] == "in_progress"
+
+    await led.mark_merge_resumed(merge_attempt_id=aid, new_status="custom")
+    assert led.attempts[0]["status"] == "custom"
+
+
+async def test_on_session_start_no_op_when_nothing_incomplete():
+    """No incomplete merges → on_session_start returns zeros, says nothing."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
+    session = _FakeAgentSession()
+
+    summary = await mem.on_session_start(session)
+
+    assert summary == {
+        "resumed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "abandoned": 0,
+        "user_messaged": False,
+    }
+    assert session.say_calls == []
+
+
+async def test_on_session_start_silent_retry_low_severity():
+    """First-failure case: silent retry, no user-facing message."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    # Pre-seed one incomplete attempt with retry_count=0 (low-severity).
+    aid = await led.log_merge_attempt(
+        session_id="prior-session",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=0,
+    )
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    session = _FakeAgentSession(session_id="this-session")
+
+    summary = await mem.on_session_start(session)
+
+    assert summary["resumed"] == 1
+    assert summary["succeeded"] == 1  # empty scratchpad → trivially succeeds
+    assert summary["user_messaged"] is False, "low severity must stay silent"
+    assert session.say_calls == []
+    # Same id used for the retry log → idempotent.
+    assert led.attempts[0]["merge_attempt_id"] == aid
+    assert led.attempts[0]["status"] == "completed"
+    assert led.attempts[0]["retry_count"] == 1
+
+
+async def test_on_session_start_high_severity_surfaces_user_message():
+    """retry_count ≥ 2 OR many failed entries → warm user-facing message."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    # retry_count=2 trips the high-severity threshold.
+    await led.log_merge_attempt(
+        session_id="prior",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=2,
+    )
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    session = _FakeAgentSession()
+
+    summary = await mem.on_session_start(session)
+
+    assert summary["user_messaged"] is True
+    assert len(session.say_calls) == 1
+    assert "didn't fully save" in session.say_calls[0]
+
+
+async def test_on_session_start_high_severity_via_failed_entry_count():
+    """Many failed_entry_ids on a single attempt also trips high severity."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    await led.log_merge_attempt(
+        session_id="prior",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=0,
+        failed_entry_ids=["a", "b", "c", "d", "e", "f"],  # > 5
+    )
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    session = _FakeAgentSession()
+
+    summary = await mem.on_session_start(session)
+
+    assert summary["user_messaged"] is True
+
+
+async def test_on_session_start_abandons_after_max_retries():
+    """retry_count ≥ 3 → mark abandoned with status='failed', do not retry."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    aid = await led.log_merge_attempt(
+        session_id="prior",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=3,  # at the limit
+    )
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    session = _FakeAgentSession()
+
+    summary = await mem.on_session_start(session)
+
+    assert summary["abandoned"] == 1
+    assert summary["succeeded"] == 0
+    rec = next(a for a in led.attempts if a["merge_attempt_id"] == aid)
+    assert rec["status"] == "failed"
+    assert "abandoned" in rec["error"].lower()
+
+
+async def test_on_session_start_logs_failure_when_retry_itself_fails():
+    """If the retry merge raises, we log 'partial_or_failed' with the
+    same merge_attempt_id, retry_count incremented, and continue.
+    """
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    aid = await led.log_merge_attempt(
+        session_id="prior",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=0,
+    )
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    mem.scratchpad.update("k", "v")  # so merge() will try to etch
+    session = _FakeAgentSession()
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("retry failed too")
+
+    with patch.object(mem, "etch", side_effect=_boom):
+        summary = await mem.on_session_start(session)
+
+    assert summary["failed"] == 1
+    assert summary["succeeded"] == 0
+    rec = next(a for a in led.attempts if a["merge_attempt_id"] == aid)
+    assert rec["status"] == "partial_or_failed"
+    assert rec["retry_count"] == 1
+    assert "retry failed too" in rec["error"]
+
+
+async def test_on_session_start_continues_when_user_message_fails():
+    """A failing session.say() must not block recovery."""
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    led = InMemoryVoiceSessionLedger()
+    await led.log_merge_attempt(
+        session_id="prior",
+        soul="grok",
+        status="partial_or_failed",
+        retry_count=2,  # high-severity
+    )
+
+    class _BrokenSaySession:
+        id = "broken-say"
+
+        async def say(self, text: str) -> None:
+            raise RuntimeError("audio backend down")
+
+    mem = FAFMemory("grok", token="t", ledger=led)
+    summary = await mem.on_session_start(_BrokenSaySession())
+
+    # User message attempted but failed; resume still proceeded.
+    assert summary["user_messaged"] is False
+    assert summary["resumed"] == 1
 
 
 @pytest.mark.network

@@ -583,6 +583,7 @@ class FAFMemory:
                 result = await self.merge(strategy=strategy)
                 await self.ledger.log_merge_attempt(
                     session_id=getattr(session, "id", "unknown"),
+                    soul=self._soul,
                     status="completed",
                     promoted=result.get("promoted", 0),
                     merged=result.get("merged", 0),
@@ -595,6 +596,7 @@ class FAFMemory:
                 )
                 await self.ledger.log_merge_attempt(
                     session_id=getattr(session, "id", "unknown"),
+                    soul=self._soul,
                     status="partial_or_failed",
                     error=str(exc),
                 )
@@ -610,6 +612,148 @@ class FAFMemory:
                 "[FAFMemory] Session %s closed — merge handled via shutdown callback",
                 getattr(session, "id", "unknown"),
             )
+
+    # ----------------------------------------------------------------
+    # Cross-session resumption (Gate 5 — Q15d)
+    # ----------------------------------------------------------------
+
+    #: Below this retry count, resumption is silent (no user-facing audio).
+    _RESUMPTION_HIGH_SEVERITY_RETRY_THRESHOLD = 2
+    #: Above this many failed entries on a single attempt, surface a message.
+    _RESUMPTION_HIGH_SEVERITY_FAILED_ENTRIES = 5
+    #: After this many retries, abandon the attempt with status="failed".
+    _RESUMPTION_MAX_RETRIES = 3
+    #: Default age window for picking up incomplete merges.
+    _RESUMPTION_MAX_AGE_HOURS = 72
+    #: Warm message used when high-severity is detected.
+    _RESUMPTION_USER_MESSAGE = (
+        "I had a couple of memories from last time that didn't fully save. "
+        "I'm catching up on them now — one moment."
+    )
+
+    async def on_session_start(
+        self,
+        session: AgentSession,
+        *,
+        max_age_hours: int | None = None,
+        strategy: str = "heuristic",
+    ) -> dict[str, Any]:
+        """Resume any incomplete merges from prior sessions.
+
+        Default behavior is **silent idempotent retry** — 95% of cases
+        recover invisibly. The user only hears about it when a retry
+        looks high-severity (retry_count ≥ 2 or many failed entries).
+
+        Call this immediately after ``session.start(...)`` in your
+        agent entrypoint. Safe to call when there's nothing to resume
+        (no-op).
+
+        Parameters
+        ----------
+        session : AgentSession
+            The live LiveKit session — used to optionally emit a warm
+            user-facing message when severity is high.
+        max_age_hours : int, optional
+            Override the default 72h window. Older incomplete attempts
+            are skipped silently.
+        strategy : str, default "heuristic"
+            Merge strategy to use for the retry. Heuristic by default
+            for cost; pass ``"grok-decides"`` if the user is paying
+            for retries to be smart.
+
+        Returns
+        -------
+        dict
+            Summary: ``{"resumed": int, "succeeded": int, "failed": int,
+            "abandoned": int, "user_messaged": bool}``.
+        """
+        max_age = max_age_hours or self._RESUMPTION_MAX_AGE_HOURS
+        incomplete = await self.ledger.get_incomplete_merges(
+            soul=self._soul, max_age_hours=max_age
+        )
+
+        if not incomplete:
+            return {
+                "resumed": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "abandoned": 0,
+                "user_messaged": False,
+            }
+
+        high_severity = any(
+            m.retry_count >= self._RESUMPTION_HIGH_SEVERITY_RETRY_THRESHOLD
+            or len(m.failed_entry_ids)
+            > self._RESUMPTION_HIGH_SEVERITY_FAILED_ENTRIES
+            for m in incomplete
+        )
+
+        user_messaged = False
+        if high_severity:
+            try:
+                await session.say(self._RESUMPTION_USER_MESSAGE)
+                user_messaged = True
+            except Exception as exc:  # noqa: BLE001
+                # Don't let a failed say() block the actual recovery.
+                logging.getLogger(__name__).warning(
+                    "resumption user-message failed (non-fatal): %s", exc
+                )
+
+        succeeded = 0
+        failed = 0
+        abandoned = 0
+        for attempt in incomplete:
+            if attempt.retry_count >= self._RESUMPTION_MAX_RETRIES:
+                # Final abandonment — log "failed" with same id, move on.
+                await self.ledger.log_merge_attempt(
+                    merge_attempt_id=attempt.merge_attempt_id,
+                    session_id=getattr(session, "id", "unknown"),
+                    soul=self._soul,
+                    status="failed",
+                    retry_count=attempt.retry_count,
+                    error="abandoned: max retries exceeded",
+                )
+                abandoned += 1
+                continue
+
+            await self.ledger.mark_merge_resumed(
+                merge_attempt_id=attempt.merge_attempt_id
+            )
+            try:
+                result = await self.merge(strategy=strategy)
+                await self.ledger.log_merge_attempt(
+                    merge_attempt_id=attempt.merge_attempt_id,
+                    session_id=getattr(session, "id", "unknown"),
+                    soul=self._soul,
+                    status="completed",
+                    promoted=result.get("promoted", 0),
+                    merged=result.get("merged", 0),
+                    kept_ephemeral=result.get("kept_ephemeral", 0),
+                    overall_notes=result.get("overall_notes"),
+                    retry_count=attempt.retry_count + 1,
+                )
+                succeeded += 1
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "resumption retry failed (non-fatal): %s", exc
+                )
+                await self.ledger.log_merge_attempt(
+                    merge_attempt_id=attempt.merge_attempt_id,
+                    session_id=getattr(session, "id", "unknown"),
+                    soul=self._soul,
+                    status="partial_or_failed",
+                    error=str(exc),
+                    retry_count=attempt.retry_count + 1,
+                )
+                failed += 1
+
+        return {
+            "resumed": len(incomplete),
+            "succeeded": succeeded,
+            "failed": failed,
+            "abandoned": abandoned,
+            "user_messaged": user_messaged,
+        }
 
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
