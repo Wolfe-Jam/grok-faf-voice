@@ -4,13 +4,18 @@ The voice agent triggers these naturally when the user says something
 like "etch this..." or "what do you remember?". The decorator surfaces
 them as callable tools to the realtime model.
 
-Use via `FAFMemory.tools()`:
+Each tool docstring includes a CRITICAL LATENCY RULE block — the
+realtime stream goes silent during tool execution, so the model is
+instructed to speak a short verbal bridge before calling. Fast tools
+(300-700ms) use a one-word bridge ("Got it.", "Noted."); the heavier
+``merge_now`` (multi-second) uses an explicit ``session.say()``
+foreground hold for full UX coverage.
+
+Use via `FAFMemory.tools(session)`:
 
     mem = FAFMemory("grok", token=...)
-    session = AgentSession(
-        llm=xai.realtime.RealtimeModel(voice="Ara"),
-        tools=mem.tools(),
-    )
+    session = AgentSession(llm=xai.realtime.RealtimeModel(voice="Ara"))
+    agent = Agent(instructions=..., tools=mem.tools(session))
 """
 
 from __future__ import annotations
@@ -20,6 +25,8 @@ from typing import TYPE_CHECKING
 from livekit.agents import RunContext, function_tool
 
 if TYPE_CHECKING:
+    from livekit.agents import AgentSession
+
     from grok_faf_voice.memory import FAFMemory
 
 
@@ -35,6 +42,13 @@ def make_etch_tool(mem: FAFMemory):
         "save that", or otherwise asks to record something durably.
         The content will survive across sessions, devices, and
         model switches.
+
+        CRITICAL LATENCY RULE (must follow):
+        - ALWAYS speak a short natural bridge FIRST (under 400ms):
+          "Got it.", "Noted.", "I'll remember that.", "Jotting that
+          down.", or "Understood." — THEN call this tool.
+        - Never go silent. The realtime stream emits no filler audio
+          during tool execution.
         """
         try:
             await mem.etch(content, type="memory")
@@ -58,6 +72,12 @@ def make_recall_tool(mem: FAFMemory):
         Use when the user asks "what do you remember", "what did
         I say last time", or otherwise wants to surface what's in
         the soul. Returns the full soul body.
+
+        CRITICAL LATENCY RULE (must follow):
+        - ALWAYS speak a short natural bridge FIRST: "Let me check...",
+          "Pulling that up...", "One moment while I recall...", or
+          "Looking that up for you." — THEN call this tool.
+        - Never go silent.
         """
         try:
             return await mem.get()
@@ -98,6 +118,12 @@ def make_paralinguistic_tool(mem: FAFMemory):
         Don't fabricate markers. Only call when the cue is genuinely
         observable. Markers persist across sessions so the agent can
         open future calls with appropriate awareness.
+
+        CRITICAL LATENCY RULE (must follow):
+        - ALWAYS speak a short micro-bridge FIRST: "Noted the tone.",
+          "Got the vibe.", "Registering that.", or "Marking the energy."
+          — THEN call this tool.
+        - Never go silent.
         """
         try:
             await mem.etch_paralinguistic(
@@ -112,13 +138,19 @@ def make_paralinguistic_tool(mem: FAFMemory):
     return note_paralinguistic
 
 
-def make_merge_tool(mem: FAFMemory):
+def make_merge_tool(mem: FAFMemory, session: AgentSession):
     """Return an @function_tool that promotes scratchpad → soul.
 
     The model fires this when the user signals end-of-conversation
     with phrases like "save this", "commit our notes", "remember all
     of this". After firing, the scratchpad is cleared and important
     items are permanent in the soul.
+
+    Pattern B (heavy tool): closes over ``session`` to emit an
+    explicit verbal hold via ``session.say()`` before the multi-second
+    merge runs, then a short confirmation after. Without this, the
+    realtime stream goes silent for several seconds and the user
+    perceives a stall.
     """
     from grok_faf_voice.memory import (
         FAFAuthRequiredError,
@@ -134,12 +166,28 @@ def make_merge_tool(mem: FAFMemory):
         "commit our notes", "remember all of this", or otherwise
         signals they want to lock in the conversation. Returns a
         count of what was kept and what was discarded.
+
+        CRITICAL LATENCY RULE (multi-second tool):
+        - This SDK emits an explicit verbal hold ("Give me just a
+          moment while I consolidate everything...") before the merge
+          runs and a short confirmation after. The model does not need
+          to speak a bridge here — the SDK handles it.
         """
         try:
-            result = await mem.merge()
+            await session.say(
+                "Give me just a moment while I consolidate everything..."
+            )
+            result = await mem.merge(strategy="grok-decides")
+            promoted = result.get("promoted", 0)
+            merged = result.get("merged", 0)
+            total = promoted + merged
+            if total > 0:
+                await session.say(f"All set — saved {total} items.")
+            else:
+                await session.say("All tidy — nothing new to save this time.")
             return (
-                f"Saved {result['promoted']} memories. "
-                f"{result['discarded']} discarded as ephemeral."
+                f"Saved {promoted} memories. "
+                f"{result.get('kept_ephemeral', result.get('discarded', 0))} kept ephemeral."
             )
         except FAFAuthRequiredError as e:
             return str(e)

@@ -28,14 +28,37 @@ import httpx
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from grok_faf_voice._merge_models import (
+    SYSTEM_PROMPT,
+    USER_PROMPT_TEMPLATE,
+    MergePayloadEntry,
+    MergeResult,
+)
+from grok_faf_voice.ledger import NullVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
 if TYPE_CHECKING:
-    from livekit.agents import AgentSession
+    from livekit.agents import Agent, AgentSession
 
 MCPAAS_URL = "https://mcpaas.live/mcp"
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
-XAI_CHAT_MODEL_DEFAULT = "grok-4-1-fast-non-reasoning"
+# grok-4-1-fast-reasoning per Q12: same price as non-reasoning, judgment-grade
+# for memory consolidation. The reasoning trace dramatically improves recency
+# vs importance, emotional weight, and over-consolidation calls.
+XAI_CHAT_MODEL_DEFAULT = "grok-4-1-fast-reasoning"
+
+# System-prompt reinforcement for tool latency discipline. Append to your
+# Agent's instructions so the model speaks a short bridge phrase before
+# calling any FAFMemory tool — the realtime stream goes silent during
+# tool execution otherwise.
+LATENCY_BRIDGE_INSTRUCTIONS = """
+CRITICAL LATENCY RULE (follow exactly):
+- For etch_memory / recall_memory / note_paralinguistic: ALWAYS speak a short
+  natural bridge FIRST ("Got it.", "Noted.", "Let me check...") then call the
+  tool. Never go silent during tool execution.
+- For merge_now: say "Give me just a moment while I consolidate..." before
+  starting — it can take several seconds.
+""".strip()
 
 # Suppress benign fastmcp shutdown noise. The Streamable HTTP
 # transport emits "Session termination failed: 404" on every clean
@@ -105,10 +128,15 @@ class FAFMemory:
     LiveKit integration::
 
         session = AgentSession(
-            llm=xai.realtime.RealtimeModel(voice="Ara"),
-            instructions=ctx.system_prompt(),
-            tools=mem.tools(),  # adds etch_memory + recall_memory
+            llm=xai.realtime.RealtimeModel(
+                voice="Ara",
+                turn_detection={"type": "server_vad", "threshold": 0.85,
+                                "silence_duration_ms": 500,
+                                "prefix_padding_ms": 333},
+            ),
         )
+        agent = Agent(instructions=ctx.system_prompt(), tools=mem.tools(session))
+        mem.attach_auto_merge(session, agent, strategy="grok-decides")
     """
 
     def __init__(
@@ -117,11 +145,19 @@ class FAFMemory:
         *,
         token: str | None = None,
         mcp_url: str = MCPAAS_URL,
+        ledger: VoiceSessionLedger | None = None,
     ) -> None:
         self._soul = soul
         self._token = token or os.environ.get("MCPAAS_TOKEN")
         self._mcp_url = mcp_url
         self._scratchpad = Scratchpad()
+        self.ledger: VoiceSessionLedger = ledger or NullVoiceSessionLedger()
+        # Guards for compose-with-merge_now. Set to True at the success
+        # tail of `merge()` so the shutdown callback can no-op when the
+        # explicit user-triggered merge already ran.
+        self._merge_completed_this_session = False
+        self._merge_in_progress = False
+        self._lock = asyncio.Lock()
 
     @property
     def soul(self) -> str:
@@ -298,23 +334,42 @@ class FAFMemory:
 
         - ``"merge_all"``: promote every entry regardless of metadata.
 
-        Clears the scratchpad after a successful merge.
+        Clears the scratchpad after a successful merge and sets
+        ``_merge_completed_this_session`` so the auto-merge shutdown
+        callback can no-op.
 
         Returns
         -------
         dict
-            ``{"promoted": int, "discarded": int, "strategy": str}``
+            ``{"promoted": int, "discarded": int, "strategy": str,
+            "merged": int, "kept_ephemeral": int, "overall_notes": str | None}``
+
+            ``promoted`` and ``discarded`` are preserved for backward
+            compatibility. ``kept_ephemeral`` is a semantic alias for
+            ``discarded``. ``merged`` is reserved for Gate 5+ (true
+            scratchpad-internal consolidation); always 0 today.
+            ``overall_notes`` is populated by the grok-decides strategy
+            from the LLM's MergeResult; None for heuristic / merge_all.
         """
         entries = self._scratchpad.all_entries()
         if not entries:
-            return {"promoted": 0, "discarded": 0, "strategy": strategy}
+            self._merge_completed_this_session = True
+            return {
+                "promoted": 0,
+                "discarded": 0,
+                "strategy": strategy,
+                "merged": 0,
+                "kept_ephemeral": 0,
+                "overall_notes": None,
+            }
 
+        overall_notes: str | None = None
         if strategy == "heuristic":
             promoted, discarded = self._heuristic_split(entries)
         elif strategy == "grok-decides":
             try:
-                promoted, discarded = await self._grok_decides_split(
-                    entries, chat_model=chat_model
+                promoted, discarded, overall_notes = (
+                    await self._grok_decides_split(entries, chat_model=chat_model)
                 )
             except Exception as e:
                 raise FAFMergeError(
@@ -341,11 +396,15 @@ class FAFMemory:
 
         # Clear scratchpad after successful merge
         self._scratchpad.clear()
+        self._merge_completed_this_session = True
 
         return {
             "promoted": len(promoted),
             "discarded": len(discarded),
             "strategy": strategy,
+            "merged": 0,
+            "kept_ephemeral": len(discarded),
+            "overall_notes": overall_notes,
         }
 
     def _heuristic_split(
@@ -366,12 +425,17 @@ class FAFMemory:
         entries: dict[str, ScratchpadEntry],
         *,
         chat_model: str,
-    ) -> tuple[list, list]:
+    ) -> tuple[list, list, str | None]:
         """Ask Grok which entries deserve permanent memory.
 
         Hits xAI's chat completions REST endpoint directly (same
-        pattern as utils/transcribe.py). Returns conservatively
-        (keep everything) on any parse failure.
+        pattern as utils/transcribe.py) with structured outputs bound
+        to ``MergeResult``'s JSON schema. Per Q12+Q12b+Q12c:
+        guaranteed-valid response shape, no fallback parser needed.
+
+        ``merge_into`` decisions are treated as ``promote`` for now
+        (Gate 4.5). True scratchpad-internal consolidation lands at
+        Gate 5+.
         """
         api_key = os.environ.get("XAI_API_KEY")
         if not api_key:
@@ -379,26 +443,22 @@ class FAFMemory:
                 "XAI_API_KEY not set — required for strategy='grok-decides'."
             )
 
-        items_json = json.dumps(
-            {
-                k: {"value": e.value, "priority": e.priority, "tag": e.tag}
-                for k, e in entries.items()
-            },
-            indent=2,
-        )
-        prompt = (
-            "You are a memory consolidator for a voice AI agent. "
-            "Below is a scratchpad of in-session items. Decide which "
-            "are worth saving as permanent memories vs which are "
-            "ephemeral. Permanent items are facts/preferences/decisions "
-            "that future sessions should know. Ephemeral items are "
-            "transient (URLs mentioned once, throwaway notes, etc.). "
-            "Respond with JSON only, no prose:\n"
-            '  {"keep": ["key1", "key2"], "discard": ["key3"]}\n\n'
-            f"Scratchpad:\n{items_json}"
-        )
+        payload_entries, scratchpad_json = self._prepare_llm_input(entries)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": USER_PROMPT_TEMPLATE.format(
+                    soul_summary="No prior soul summary available.",
+                    num_entries=len(payload_entries),
+                    scratchpad_json=scratchpad_json,
+                    existing_memories_json="[]",
+                ),
+            },
+        ]
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 XAI_CHAT_URL,
                 headers={
@@ -407,69 +467,149 @@ class FAFMemory:
                 },
                 json={
                     "model": chat_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.0,
+                    "messages": messages,
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "MergeResult",
+                            "strict": True,
+                            "schema": MergeResult.model_json_schema(),
+                        },
+                    },
+                    "temperature": 0.25,
+                    "max_tokens": 4500,
                 },
             )
             resp.raise_for_status()
             payload = resp.json()
 
-        # Parse decision; fall back conservative on any issue
-        try:
-            content = payload["choices"][0]["message"]["content"].strip()
-            # Strip markdown fences if Grok wrapped the JSON
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
-            decision = json.loads(content)
-            keep = set(decision.get("keep", []))
-            discard = set(decision.get("discard", []))
-        except (KeyError, json.JSONDecodeError, IndexError):
-            # Conservative fallback: keep everything
-            return list(entries.items()), []
+        content = payload["choices"][0]["message"]["content"]
+        result = MergeResult.model_validate_json(content)
 
-        promoted = []
-        discarded = []
+        promoted: list[tuple[str, ScratchpadEntry]] = []
+        discarded: list[tuple[str, ScratchpadEntry]] = []
+        seen: set[str] = set()
+        for dec in result.decisions:
+            entry = entries.get(dec.entry_id)
+            if entry is None:
+                continue
+            seen.add(dec.entry_id)
+            if dec.action in ("promote", "merge_into"):
+                promoted.append((dec.entry_id, entry))
+            else:  # keep_ephemeral
+                discarded.append((dec.entry_id, entry))
+
+        # Conservative fallback for any entry the model didn't decide on.
         for key, entry in entries.items():
-            if key in discard and key not in keep:
-                discarded.append((key, entry))
-            else:
+            if key not in seen:
                 promoted.append((key, entry))
-        return promoted, discarded
+
+        return promoted, discarded, result.overall_notes
+
+    @staticmethod
+    def _prepare_llm_input(
+        entries: dict[str, ScratchpadEntry],
+    ) -> tuple[list[MergePayloadEntry], str]:
+        """Convert internal Scratchpad entries to LLM wire shape + JSON.
+
+        Maps the SDK's ``priority`` levels onto the LLM's
+        ``ephemeral|standard|high|critical`` enum. ``"medium"`` (today's
+        default) maps to ``"standard"``; any unknown value falls back to
+        ``"standard"`` so the schema validator never rejects.
+        """
+        priority_map = {
+            "ephemeral": "ephemeral",
+            "low": "standard",
+            "medium": "standard",
+            "standard": "standard",
+            "high": "high",
+            "critical": "critical",
+        }
+        payload_entries: list[MergePayloadEntry] = []
+        for key, e in entries.items():
+            tags = [e.tag] if e.tag else []
+            payload_entries.append(
+                MergePayloadEntry(
+                    id=key,
+                    content=e.value,
+                    priority=priority_map.get(e.priority, "standard"),
+                    tags=tags,
+                )
+            )
+        scratchpad_json = json.dumps(
+            [m.model_dump(mode="json", exclude_none=True) for m in payload_entries],
+            indent=2,
+            ensure_ascii=False,
+        )
+        return payload_entries, scratchpad_json
 
     def attach_auto_merge(
         self,
         session: AgentSession,
+        agent: Agent,
         *,
         strategy: str = "heuristic",
     ) -> None:
-        """Hook ``session.on("close")`` so merge fires automatically.
+        """Register an awaitable shutdown callback that runs ``merge()``.
 
-        Convenience for devs who want session-end persistence without
-        wiring it explicitly. Library callers can still call
-        ``await mem.merge()`` manually — both work.
+        Uses ``agent.add_shutdown_callback`` (the load-bearing primitive)
+        rather than ``session.on("close")`` — the worker awaits shutdown
+        callbacks up to ``shutdown_process_timeout`` (~10s default), so a
+        multi-second merge can finish cleanly on every termination path
+        (graceful close, user disconnect, room destroy, worker drain).
 
-        Failures during auto-merge are logged but never raised, so a
-        merge crash can't take down the session lifecycle.
+        Composes with explicit ``merge_now``: an async lock + two guard
+        flags ensure the shutdown callback no-ops when the user already
+        triggered a merge mid-conversation. ``session.on("close")`` is
+        kept for observability only.
+
+        Every attempt is recorded in the configured ledger (success and
+        failure paths). Failures inside the merge are caught and logged
+        — never re-raised, so shutdown completes cleanly.
         """
 
-        @session.on("close")
-        def _on_close(*_args: Any, **_kwargs: Any) -> None:
-            async def _do() -> None:
-                try:
-                    await self.merge(strategy=strategy)
-                except Exception as e:  # noqa: BLE001
-                    logging.getLogger(__name__).warning(
-                        "auto-merge failed (non-fatal): %s", e
-                    )
+        async def _merge_on_shutdown() -> None:
+            async with self._lock:
+                if self._merge_completed_this_session:
+                    return  # explicit merge_now already ran
+                if self._merge_in_progress:
+                    # Rare race with merge_now — wait briefly then re-check
+                    await asyncio.sleep(0.8)
+                    if self._merge_completed_this_session:
+                        return
+                self._merge_in_progress = True
 
             try:
-                asyncio.create_task(_do())
-            except RuntimeError:
-                # No running loop (rare during shutdown). Best-effort.
-                pass
+                result = await self.merge(strategy=strategy)
+                await self.ledger.log_merge_attempt(
+                    session_id=getattr(session, "id", "unknown"),
+                    status="completed",
+                    promoted=result.get("promoted", 0),
+                    merged=result.get("merged", 0),
+                    kept_ephemeral=result.get("kept_ephemeral", 0),
+                    overall_notes=result.get("overall_notes"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "auto-merge failed (non-fatal): %s", exc
+                )
+                await self.ledger.log_merge_attempt(
+                    session_id=getattr(session, "id", "unknown"),
+                    status="partial_or_failed",
+                    error=str(exc),
+                )
+            finally:
+                self._merge_in_progress = False
+
+        agent.add_shutdown_callback(_merge_on_shutdown)
+
+        # Keep on("close") for observability only — never put work here.
+        @session.on("close")
+        def _on_close(*_args: Any, **_kwargs: Any) -> None:
+            logging.getLogger(__name__).debug(
+                "[FAFMemory] Session %s closed — merge handled via shutdown callback",
+                getattr(session, "id", "unknown"),
+            )
 
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
@@ -497,12 +637,17 @@ class FAFMemory:
         recent = markers[-max_recent:]
         return "Prior voice context: " + "; ".join(recent)
 
-    def tools(self) -> list:
+    def tools(self, session: AgentSession) -> list:
         """Return LiveKit `@function_tool` wrappers for the agent.
 
-        At Gate 4: etch_memory + recall_memory + note_paralinguistic
+        At Gate 4.5: etch_memory + recall_memory + note_paralinguistic
         + merge_now. Pass into the Agent (or AgentSession) ``tools=``
         list to expose memory commands to the voice agent.
+
+        ``session`` is required because ``merge_now`` uses an explicit
+        verbal hold (``await session.say("Give me just a moment...")``)
+        to mask the multi-second merge latency — the realtime stream
+        goes silent during tool execution otherwise.
         """
         from grok_faf_voice.tools import (
             make_etch_tool,
@@ -515,7 +660,7 @@ class FAFMemory:
             make_etch_tool(self),
             make_recall_tool(self),
             make_paralinguistic_tool(self),
-            make_merge_tool(self),
+            make_merge_tool(self, session),
         ]
 
 

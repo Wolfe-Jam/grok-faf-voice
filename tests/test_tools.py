@@ -11,6 +11,19 @@ from grok_faf_voice.tools import (
 )
 
 
+class _FakeSession:
+    """Minimal stand-in for AgentSession — just needs to be passable
+    as the ``session`` argument to ``make_merge_tool``. The factory
+    only stores the reference; tool execution would need ``.say(...)``
+    but smoke tests don't invoke the tool body.
+    """
+
+    id = "fake-session"
+
+    async def say(self, text: str) -> None:
+        return None
+
+
 def test_make_etch_tool_returns_object():
     """make_etch_tool returns a FunctionTool object."""
     mem = FAFMemory("grok")
@@ -35,7 +48,7 @@ def test_make_paralinguistic_tool_returns_object():
 def test_make_merge_tool_returns_object():
     """make_merge_tool returns a FunctionTool object."""
     mem = FAFMemory("grok")
-    tool = make_merge_tool(mem)
+    tool = make_merge_tool(mem, _FakeSession())
     assert tool is not None
 
 
@@ -45,14 +58,14 @@ def test_tools_factory_quartet_distinct():
     etch = make_etch_tool(mem)
     recall = make_recall_tool(mem)
     para = make_paralinguistic_tool(mem)
-    merge = make_merge_tool(mem)
+    merge = make_merge_tool(mem, _FakeSession())
     assert len({id(etch), id(recall), id(para), id(merge)}) == 4
 
 
 def test_fafmemory_tools_returns_quartet():
-    """FAFMemory.tools() returns etch + recall + paralinguistic + merge_now."""
+    """FAFMemory.tools(session) returns etch + recall + paralinguistic + merge_now."""
     mem = FAFMemory("grok")
-    tools = mem.tools()
+    tools = mem.tools(_FakeSession())
     assert len(tools) == 4
     names = {t.info.name for t in tools}
     assert names == {
