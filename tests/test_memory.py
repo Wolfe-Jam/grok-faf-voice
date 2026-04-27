@@ -1,12 +1,19 @@
-"""Smoke tests for FAFMemory skeleton (Gate 1).
+"""Smoke tests for FAFMemory.
 
-FAFMemory's full surface ships at Gates 2–6. These tests verify the
-public API exists and is importable from v0.0.1.
+Offline tests verify the public surface, payload shape, and
+scratchpad composition. Network-marked tests round-trip live
+against MCPaaS using the `grok` dev soul.
 """
 
 from __future__ import annotations
 
-from grok_faf_voice import FAFMemory
+import os
+from datetime import datetime, timezone
+from unittest.mock import patch
+
+import pytest
+
+from grok_faf_voice import FAFMemory, Scratchpad
 
 
 def test_import():
@@ -15,6 +22,168 @@ def test_import():
 
 
 def test_instantiation():
-    """FAFMemory accepts a string argument."""
-    mem = FAFMemory("project.fafm")
-    assert mem is not None
+    """FAFMemory accepts a soul name."""
+    mem = FAFMemory("grok")
+    assert mem.soul == "grok"
+
+
+def test_token_from_env():
+    """FAFMemory reads MCPAAS_TOKEN from env when no token arg given."""
+    with patch.dict(os.environ, {"MCPAAS_TOKEN": "env-token-123"}):
+        mem = FAFMemory("grok")
+        assert mem._token == "env-token-123"
+
+
+def test_token_constructor_overrides_env():
+    """Explicit token arg wins over MCPAAS_TOKEN env var."""
+    with patch.dict(os.environ, {"MCPAAS_TOKEN": "env-value"}):
+        mem = FAFMemory("grok", token="explicit-value")
+        assert mem._token == "explicit-value"
+
+
+def test_token_none_when_no_arg_or_env():
+    """No token arg + no env = None (read still works for public souls)."""
+    with patch.dict(os.environ, {}, clear=True):
+        mem = FAFMemory("grok")
+        assert mem._token is None
+
+
+def test_scratchpad_composed():
+    """FAFMemory composes a fresh Scratchpad."""
+    mem = FAFMemory("grok")
+    assert isinstance(mem.scratchpad, Scratchpad)
+    assert len(mem.scratchpad) == 0
+
+
+def test_tools_returns_two_callables():
+    """tools() returns the etch + recall function-tool pair."""
+    mem = FAFMemory("grok")
+    tools = mem.tools()
+    assert len(tools) == 2
+
+
+@pytest.mark.network
+async def test_etch_get_round_trip():
+    """Live MCPaaS round-trip: write a tagged note, read it back.
+
+    Writes to the `grok` dev soul (per `grok-soul-default-dev-target`
+    convention). Token from MCPAAS_TOKEN env or the canonical dev
+    token if env is unset.
+    """
+    token = os.environ.get("MCPAAS_TOKEN", "wolfe-68-orange")
+    mem = FAFMemory("grok", token=token)
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    marker = f"pytest-roundtrip-{timestamp}"
+
+    write_response = await mem.etch(
+        marker,
+        type="note",
+        tags=["test", "pytest", "gate-2"],
+    )
+    assert "grok" in write_response
+    assert marker in write_response
+
+    soul_text = await mem.get()
+    assert marker in soul_text
+
+
+async def test_etch_payload_shape_mocked():
+    """etch() builds the correct write_soul payload (mocked client)."""
+    mem = FAFMemory("grok", token="test-token")
+
+    captured: dict = {}
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "Note added to grok: hello"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            self.url = url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured["tool_name"] = name
+            captured["args"] = args
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.etch("hello", type="note", tags=["a", "b"])
+
+    assert captured["tool_name"] == "write_soul"
+    assert captured["args"]["soul"] == "grok"
+    assert captured["args"]["entry"] == "hello"
+    assert captured["args"]["type"] == "note"
+    assert captured["args"]["tags"] == ["a", "b"]
+    assert captured["args"]["token"] == "test-token"
+    assert "Note added" in result
+
+
+async def test_get_payload_shape_mocked():
+    """get() builds the correct get_soul payload (mocked client)."""
+    mem = FAFMemory("grok")
+
+    captured: dict = {}
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "soul body here"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured["tool_name"] = name
+            captured["args"] = args
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.get()
+
+    assert captured["tool_name"] == "get_soul"
+    assert captured["args"] == {"soul": "grok"}
+    assert result == "soul body here"
+
+
+async def test_etch_omits_token_when_none():
+    """When no token is set, etch() must NOT include the token field."""
+    with patch.dict(os.environ, {}, clear=True):
+        mem = FAFMemory("grok")
+
+        captured: dict = {}
+
+        class FakeResult:
+            is_error = False
+            content = [type("TC", (), {"text": "ok"})()]
+
+        class FakeClient:
+            def __init__(self, url):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def call_tool(self, name, args):
+                captured["args"] = args
+                return FakeResult()
+
+        with patch("grok_faf_voice.memory.Client", FakeClient):
+            await mem.etch("hello")
+
+        assert "token" not in captured["args"]
