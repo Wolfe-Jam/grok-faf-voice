@@ -1,6 +1,6 @@
 # grok-faf-voice
 
-**Persistent context for Grok Voice. LiveKit enabled.**
+**Persistent memory for Grok Voice. LiveKit enabled.**
 
 One import. Done.
 
