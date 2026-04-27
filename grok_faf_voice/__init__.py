@@ -22,7 +22,7 @@ from grok_faf_voice.memory import (
 )
 from grok_faf_voice.scratchpad import Scratchpad
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 __all__ = [
     "FAFAuthRequiredError",
     "FAFContext",

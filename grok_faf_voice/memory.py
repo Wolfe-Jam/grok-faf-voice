@@ -192,15 +192,111 @@ class FAFMemory:
 
         return cls(f"{op.capitalize()} failed: {msg.strip()}")
 
-    def tools(self) -> list:
-        """Return LiveKit `@function_tool` wrappers (etch + recall).
+    # ----------------------------------------------------------------
+    # Paralinguistic markers (Gate 3)
+    #
+    # Voice memory captures HOW the user spoke, not just WHAT was said.
+    # Markers are stored as standard `write_soul` entries with a
+    # consistent inline prefix and the `paralinguistic` tag, so they
+    # can be retrieved + summarised on subsequent sessions.
+    #
+    # Canonical marker types (free-form strings accepted):
+    #   - "tone" — e.g. frustrated, excited, calm, urgent
+    #   - "emotional_state" — e.g. stressed, happy, focused
+    #   - "speaking_style" — e.g. fast, slow, deliberate, hesitant
+    #   - "interruption_pattern" — e.g. frequent, rare, after silence
+    # ----------------------------------------------------------------
 
-        Pass into `AgentSession(tools=mem.tools())` to expose memory
-        commands to the voice agent.
+    PARALINGUISTIC_PREFIX = "[paralinguistic]"
+    PARALINGUISTIC_TAG = "paralinguistic"
+
+    async def etch_paralinguistic(
+        self,
+        marker_type: str,
+        value: str,
+        *,
+        context: str | None = None,
+    ) -> str:
+        """Record a paralinguistic marker (HOW the user spoke).
+
+        Stored as a standard write_soul entry, prefixed and tagged for
+        downstream retrieval by `paralinguistic_summary`.
+
+        Parameters
+        ----------
+        marker_type : str
+            Canonical types: 'tone', 'emotional_state', 'speaking_style',
+            'interruption_pattern'. Other strings accepted but may not
+            be recognised by future enrichment passes.
+        value : str
+            The marker value, e.g. 'frustrated', 'fast-paced'.
+        context : str, optional
+            What was being discussed when the marker was observed.
+
+        Examples
+        --------
+        >>> await mem.etch_paralinguistic(
+        ...     "tone", "frustrated", context="checkout flow"
+        ... )
         """
-        from grok_faf_voice.tools import make_etch_tool, make_recall_tool
+        entry_parts = [
+            self.PARALINGUISTIC_PREFIX,
+            f"{marker_type}: {value}",
+        ]
+        if context:
+            entry_parts.append(f"— {context}")
+        entry = " ".join(entry_parts)
 
-        return [make_etch_tool(self), make_recall_tool(self)]
+        return await self.etch(
+            entry,
+            type="paralinguistic",
+            tags=[self.PARALINGUISTIC_TAG, marker_type],
+        )
+
+    async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
+        """Build a one-line synopsis of recent paralinguistic markers.
+
+        Suitable for injection into the next session's system prompt
+        so the agent opens with awareness of HOW the user has been
+        sounding across prior sessions.
+
+        Returns an empty string if the soul has no paralinguistic
+        entries yet — caller can compose accordingly.
+
+        Parameters
+        ----------
+        max_recent : int, default 5
+            How many recent paralinguistic entries to surface.
+        """
+        soul_text = await self.get()
+        markers = _extract_paralinguistic_lines(
+            soul_text, prefix=self.PARALINGUISTIC_PREFIX
+        )
+
+        if not markers:
+            return ""
+
+        recent = markers[-max_recent:]
+        return "Prior voice context: " + "; ".join(recent)
+
+    def tools(self) -> list:
+        """Return LiveKit `@function_tool` wrappers for the agent.
+
+        At Gate 3 the trio: etch_memory, recall_memory, note_paralinguistic.
+        Pass into the Agent (or AgentSession) `tools=` list to expose
+        memory commands to the voice agent.
+        """
+        from grok_faf_voice.tools import (
+            make_etch_tool,
+            make_paralinguistic_tool,
+            make_recall_tool,
+        )
+
+        return [
+            make_etch_tool(self),
+            make_recall_tool(self),
+            make_paralinguistic_tool(self),
+        ]
 
 
 def _first_text(result: Any) -> str:
@@ -217,3 +313,28 @@ def _first_text(result: Any) -> str:
         if isinstance(text, str):
             return text
     return str(content)
+
+
+def _extract_paralinguistic_lines(soul_text: str, *, prefix: str) -> list[str]:
+    """Pull paralinguistic-prefixed lines out of a soul body.
+
+    Soul entries render as `• <text> [tag1, tag2]` in MCPaaS output.
+    We grep for the prefix marker and strip leading bullet/whitespace,
+    returning the text portion (without the trailing tags) for clean
+    summary composition.
+    """
+    out: list[str] = []
+    for raw in soul_text.splitlines():
+        if prefix not in raw:
+            continue
+        line = raw.lstrip("•· ").strip()
+        # Drop trailing tag block "[tag1, tag2]" so the summary
+        # reads cleanly without bracket noise.
+        if " [" in line:
+            line = line.rsplit(" [", 1)[0].rstrip()
+        # Strip the prefix itself for tighter summary text.
+        if line.startswith(prefix):
+            line = line[len(prefix):].lstrip()
+        if line:
+            out.append(line)
+    return out

@@ -55,11 +55,15 @@ def test_scratchpad_composed():
     assert len(mem.scratchpad) == 0
 
 
-def test_tools_returns_two_callables():
-    """tools() returns the etch + recall function-tool pair."""
+def test_tools_returns_trio():
+    """tools() returns the etch + recall + paralinguistic trio."""
     mem = FAFMemory("grok")
     tools = mem.tools()
-    assert len(tools) == 2
+    assert len(tools) == 3
+    names = [t.info.name for t in tools]
+    assert "etch_memory" in names
+    assert "recall_memory" in names
+    assert "note_paralinguistic" in names
 
 
 @pytest.mark.network
@@ -293,3 +297,187 @@ async def test_get_wraps_tool_error_as_recall_error():
             await mem.get()
 
     assert "Recall failed" in str(exc_info.value)
+
+
+# ---- Gate 3 — Paralinguistic markers ----
+
+
+async def test_etch_paralinguistic_payload_shape():
+    """etch_paralinguistic() builds correct write_soul args:
+    type='paralinguistic', tag list includes both 'paralinguistic' and
+    the marker_type, entry has the canonical prefix.
+    """
+    mem = FAFMemory("grok", token="test-token")
+
+    captured: dict = {}
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "Note added"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured["args"] = args
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        await mem.etch_paralinguistic(
+            "tone", "frustrated", context="checkout flow"
+        )
+
+    args = captured["args"]
+    assert args["type"] == "paralinguistic"
+    assert "paralinguistic" in args["tags"]
+    assert "tone" in args["tags"]
+    assert "[paralinguistic]" in args["entry"]
+    assert "tone: frustrated" in args["entry"]
+    assert "checkout flow" in args["entry"]
+
+
+async def test_etch_paralinguistic_without_context():
+    """etch_paralinguistic() works without the optional context arg."""
+    mem = FAFMemory("grok", token="test-token")
+
+    captured: dict = {}
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured["args"] = args
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        await mem.etch_paralinguistic("speaking_style", "rapid")
+
+    entry = captured["args"]["entry"]
+    assert "[paralinguistic]" in entry
+    assert "speaking_style: rapid" in entry
+    # No "—" trailing context fragment when context is omitted
+    assert "—" not in entry
+
+
+async def test_paralinguistic_summary_extracts_correctly():
+    """paralinguistic_summary() pulls prefixed lines, strips bullets and
+    trailing tag blocks, returns a one-line synopsis.
+    """
+    mem = FAFMemory("grok")
+
+    fake_soul = """
+type: soul
+soul:
+  name: grok
+---
+# Note:
+• Some unrelated entry [test]
+
+# Paralinguistic:
+• [paralinguistic] tone: frustrated — checkout flow [paralinguistic, tone]
+• [paralinguistic] speaking_style: rapid — under pressure [paralinguistic, speaking_style]
+
+# Note:
+• Another unrelated entry [demo]
+"""
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": fake_soul})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        summary = await mem.paralinguistic_summary()
+
+    assert "Prior voice context" in summary
+    assert "tone: frustrated" in summary
+    assert "speaking_style: rapid" in summary
+    # Tag block should NOT appear in the summary
+    assert "[paralinguistic, tone]" not in summary
+
+
+async def test_paralinguistic_summary_empty_when_no_markers():
+    """paralinguistic_summary() returns empty string when soul has no
+    paralinguistic entries — caller can compose conditionally.
+    """
+    mem = FAFMemory("grok")
+
+    fake_soul = """
+type: soul
+soul:
+  name: grok
+---
+# Note:
+• Just a regular note [demo]
+"""
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": fake_soul})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        summary = await mem.paralinguistic_summary()
+
+    assert summary == ""
+
+
+@pytest.mark.network
+async def test_etch_paralinguistic_round_trip():
+    """Live MCPaaS round-trip: etch a paralinguistic marker on grok soul,
+    verify it's retrievable via paralinguistic_summary.
+    """
+    token = os.environ.get("MCPAAS_TOKEN", "wolfe-68-orange")
+    mem = FAFMemory("grok", token=token)
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    marker_value = f"pytest-tone-{timestamp}"
+
+    await mem.etch_paralinguistic(
+        "tone", marker_value, context="gate-3 round-trip test"
+    )
+
+    summary = await mem.paralinguistic_summary(max_recent=20)
+    assert marker_value in summary
