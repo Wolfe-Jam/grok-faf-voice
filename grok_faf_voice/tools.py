@@ -11,6 +11,12 @@ instructed to speak a short verbal bridge before calling. Fast tools
 ``merge_now`` (multi-second) uses an explicit ``session.say()``
 foreground hold for full UX coverage.
 
+Each factory accepts an optional ``bus`` argument. When provided (or
+defaulted to ``memory.bus``), the tool emits ``tool.about_to_run``
+before its body runs and ``tool.completed`` after — enabling
+third-party subscribers to observe and react to tool execution
+without monkey-patching anything.
+
 Use via `FAFMemory.tools(session)`:
 
     mem = FAFMemory("grok", token=...)
@@ -20,9 +26,11 @@ Use via `FAFMemory.tools(session)`:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from livekit.agents import RunContext, function_tool
+
+from grok_faf_voice.context_bus import ContextBus
 
 if TYPE_CHECKING:
     from livekit.agents import AgentSession
@@ -30,9 +38,11 @@ if TYPE_CHECKING:
     from grok_faf_voice.memory import FAFMemory
 
 
-def make_etch_tool(mem: FAFMemory):
+def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
     """Return an @function_tool that etches voice content to FAFMemory."""
     from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
+
+    bus = bus or mem.bus
 
     @function_tool
     async def etch_memory(context: RunContext, content: str) -> str:
@@ -50,20 +60,30 @@ def make_etch_tool(mem: FAFMemory):
         - Never go silent. The realtime stream emits no filler audio
           during tool execution.
         """
+        await bus.emit_tool_about_to_run(
+            "etch_memory", {"content_preview": content[:80]}
+        )
         try:
             await mem.etch(content, type="memory")
-            return f"Etched: {content}"
+            result = f"Etched: {content}"
+            await bus.emit_tool_completed("etch_memory", result=result)
+            return result
         except FAFAuthRequiredError as e:
+            await bus.emit_tool_completed("etch_memory", error=str(e))
             return str(e)
         except FAFEtchError as e:
-            return f"Could not save: {e}"
+            msg = f"Could not save: {e}"
+            await bus.emit_tool_completed("etch_memory", error=msg)
+            return msg
 
     return etch_memory
 
 
-def make_recall_tool(mem: FAFMemory):
+def make_recall_tool(mem: FAFMemory, bus: ContextBus | None = None):
     """Return an @function_tool that reads the current soul state."""
     from grok_faf_voice.memory import FAFRecallError
+
+    bus = bus or mem.bus
 
     @function_tool
     async def recall_memory(context: RunContext) -> str:
@@ -79,15 +99,22 @@ def make_recall_tool(mem: FAFMemory):
           "Looking that up for you." — THEN call this tool.
         - Never go silent.
         """
+        await bus.emit_tool_about_to_run("recall_memory", {})
         try:
-            return await mem.get()
+            text = await mem.get()
+            await bus.emit_tool_completed(
+                "recall_memory", result={"length": len(text)}
+            )
+            return text
         except FAFRecallError as e:
-            return f"Could not recall: {e}"
+            msg = f"Could not recall: {e}"
+            await bus.emit_tool_completed("recall_memory", error=msg)
+            return msg
 
     return recall_memory
 
 
-def make_paralinguistic_tool(mem: FAFMemory):
+def make_paralinguistic_tool(mem: FAFMemory, bus: ContextBus | None = None):
     """Return an @function_tool that records paralinguistic markers.
 
     The model decides when the user's tone/style/emotional state is
@@ -97,6 +124,8 @@ def make_paralinguistic_tool(mem: FAFMemory):
       - The user interrupts frequently or pauses notably
     """
     from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
+
+    bus = bus or mem.bus
 
     @function_tool
     async def note_paralinguistic(
@@ -125,20 +154,40 @@ def make_paralinguistic_tool(mem: FAFMemory):
           — THEN call this tool.
         - Never go silent.
         """
+        await bus.emit_tool_about_to_run(
+            "note_paralinguistic",
+            {"marker_type": marker_type, "value": value, "topic": topic},
+        )
         try:
             await mem.etch_paralinguistic(
                 marker_type, value, context=topic
             )
-            return f"Noted: {marker_type}={value}"
+            await bus.emit_paralinguistic_detected(
+                marker_type=marker_type, value=value, topic=topic
+            )
+            result = f"Noted: {marker_type}={value}"
+            await bus.emit_tool_completed(
+                "note_paralinguistic", result=result
+            )
+            return result
         except FAFAuthRequiredError as e:
+            await bus.emit_tool_completed(
+                "note_paralinguistic", error=str(e)
+            )
             return str(e)
         except FAFEtchError as e:
-            return f"Could not note: {e}"
+            msg = f"Could not note: {e}"
+            await bus.emit_tool_completed("note_paralinguistic", error=msg)
+            return msg
 
     return note_paralinguistic
 
 
-def make_merge_tool(mem: FAFMemory, session: AgentSession):
+def make_merge_tool(
+    mem: FAFMemory,
+    session: AgentSession,
+    bus: ContextBus | None = None,
+):
     """Return an @function_tool that promotes scratchpad → soul.
 
     The model fires this when the user signals end-of-conversation
@@ -158,6 +207,8 @@ def make_merge_tool(mem: FAFMemory, session: AgentSession):
         FAFMergeError,
     )
 
+    bus = bus or mem.bus
+
     @function_tool
     async def merge_now(context: RunContext) -> str:
         """Promote in-session scratchpad memories to permanent soul.
@@ -173,11 +224,14 @@ def make_merge_tool(mem: FAFMemory, session: AgentSession):
           runs and a short confirmation after. The model does not need
           to speak a bridge here — the SDK handles it.
         """
+        await bus.emit_tool_about_to_run("merge_now", {})
         try:
             await session.say(
                 "Give me just a moment while I consolidate everything..."
             )
-            result = await mem.merge(strategy="grok-decides")
+            await bus.emit_merge_starting("user-initiated merge_now")
+            result: dict[str, Any] = await mem.merge(strategy="grok-decides")
+            await bus.emit_merge_completed(result=result)
             promoted = result.get("promoted", 0)
             merged = result.get("merged", 0)
             total = promoted + merged
@@ -185,13 +239,18 @@ def make_merge_tool(mem: FAFMemory, session: AgentSession):
                 await session.say(f"All set — saved {total} items.")
             else:
                 await session.say("All tidy — nothing new to save this time.")
-            return (
+            text = (
                 f"Saved {promoted} memories. "
                 f"{result.get('kept_ephemeral', result.get('discarded', 0))} kept ephemeral."
             )
+            await bus.emit_tool_completed("merge_now", result=text)
+            return text
         except FAFAuthRequiredError as e:
+            await bus.emit_tool_completed("merge_now", error=str(e))
             return str(e)
         except (FAFEtchError, FAFMergeError) as e:
-            return f"Could not save: {e}"
+            msg = f"Could not save: {e}"
+            await bus.emit_tool_completed("merge_now", error=msg)
+            return msg
 
     return merge_now

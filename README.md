@@ -33,6 +33,46 @@ primitives:
 | **Smart Merge Engine** | Promotes scratchpad → permanent soul on session end, LLM-judged |
 | **Session Ledger** | Auditable record of every merge attempt, idempotent retries |
 | **Cross-session resumption** | Silently retries unfinished merges from prior sessions |
+| **Context Bus** | Async pub/sub over voice-memory events — the right hooks at the right moments |
+
+---
+
+## Context Bus — the right hooks at the right moments
+
+Voice memory is most useful when other code can react to it. The
+Context Bus gives developers precise, semantic control over the voice
+memory layer with full async power and backpressure: subscribe to
+events like `tool.about_to_run`, `paralinguistic.detected`,
+`merge.starting`, `session.resumed`, and 9 more.
+
+```python
+from grok_faf_voice import BusEvent, BusEventPayload
+
+@mem.bus.on(BusEvent.PARALINGUISTIC_DETECTED)
+async def on_paralinguistic(payload: BusEventPayload) -> None:
+    # Fires every time the agent records HOW the user spoke
+    print(payload.payload)  # {"marker_type": "tone", "value": "frustrated", ...}
+
+@mem.bus.on(BusEvent.MERGE_STARTING)
+async def on_merge(payload: BusEventPayload) -> None:
+    # Fires before a Smart Merge runs — auto-merge or explicit merge_now
+    print(f"merging: {payload.payload['reason']}")
+
+await mem.start_bus()
+```
+
+Sync handlers work too — pass them to `mem.bus.on_sync(event, fn)`.
+Failing handlers are logged but never block the rest of the bus.
+
+The complete event vocabulary is exported as `BusEvent`:
+
+```
+scratchpad.updated      scratchpad.dirty       soul.updated
+memory.snapshot         paralinguistic.detected
+tool.about_to_run       tool.completed
+merge.pending           merge.starting         merge.completed
+session.resumed         context.invalidated    audio.cue
+```
 
 ---
 
@@ -78,6 +118,10 @@ async def entrypoint(ctx: agents.JobContext):
         instructions=f"{faf.system_prompt()}\n\n{LATENCY_BRIDGE_INSTRUCTIONS}",
         tools=mem.tools(session),  # etch + recall + paralinguistic + merge_now
     )
+
+    # Start the Context Bus eagerly so subscribers can listen for the
+    # full session lifecycle. Auto-starts on first emit if you forget.
+    await mem.start_bus()
 
     # Awaitable shutdown callback — merge runs to completion on every
     # termination path (graceful close, disconnect, room destroy, drain).

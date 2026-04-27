@@ -10,10 +10,14 @@ Two first-class siblings + the Scratchpad primitive:
 - ``Scratchpad`` — in-session ephemeral key/value store, composed
   by ``FAFMemory``.
 
+Plus a Context Bus for async pub/sub over voice-memory events
+(``ContextBus`` + ``BusEvent`` + ``BusEventPayload``).
+
 Stateless by default. Memory is a tool, not a baseline.
 """
 
 from grok_faf_voice.context import FAFContext
+from grok_faf_voice.context_bus import BusEvent, BusEventPayload, ContextBus
 from grok_faf_voice.ledger import (
     InMemoryVoiceSessionLedger,
     MergeAttempt,
@@ -30,8 +34,11 @@ from grok_faf_voice.memory import (
 )
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"
 __all__ = [
+    "BusEvent",
+    "BusEventPayload",
+    "ContextBus",
     "FAFAuthRequiredError",
     "FAFContext",
     "FAFEtchError",

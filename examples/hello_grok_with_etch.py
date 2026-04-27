@@ -72,6 +72,12 @@ async def entrypoint(ctx: agents.JobContext):
         tools=mem.tools(session),  # etch + recall + paralinguistic + merge_now
     )
 
+    # Start the Context Bus eagerly so subscribers can listen for the
+    # full session lifecycle (tool calls, scratchpad mutations, merges,
+    # paralinguistic detections, etc.). Auto-starts on first emit if you
+    # forget, but explicit start is cleaner.
+    await mem.start_bus()
+
     # agent.add_shutdown_callback is awaited during graceful shutdown,
     # so the merge runs to completion (or explicit failure) on every
     # termination path — not fire-and-forget.

@@ -5,6 +5,65 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] — 2026-04-27
+
+### Added — Context Bus
+
+Async pub/sub over voice-memory events. Gives developers precise,
+semantic control over the voice memory layer with full async power
+and backpressure — the right hooks at the right moments.
+
+- `ContextBus` class — async-first dispatcher with a single
+  background task and bounded `asyncio.Queue` (default cap 1000).
+  Backpressure: queue-full drops the event with a logged warning;
+  the producer never blocks.
+- `BusEvent` — Enum of 13 canonical event types (`scratchpad.updated`,
+  `scratchpad.dirty`, `soul.updated`, `memory.snapshot`,
+  `paralinguistic.detected`, `tool.about_to_run`, `tool.completed`,
+  `merge.pending`, `merge.starting`, `merge.completed`,
+  `session.resumed`, `context.invalidated`, `audio.cue`).
+- `BusEventPayload` — Pydantic envelope (event + payload + timestamp + source).
+- `mem.bus.on(event, async_handler)` — async-first subscription. Also
+  usable as a decorator (`@mem.bus.on(event)`).
+- `mem.bus.on_sync(event, sync_handler)` — sync compat layer; the bus
+  wraps the callback and dispatches it on the same task lifecycle.
+- `mem.bus.off(event, handler)` — unsubscribe.
+- Convenience emitters on the bus: `emit_scratchpad_updated`,
+  `emit_tool_about_to_run`, `emit_tool_completed`,
+  `emit_merge_starting`, `emit_merge_completed`,
+  `emit_paralinguistic_detected`, `emit_session_resumed`.
+- Failing handlers are logged at WARNING and never stop the
+  dispatcher or other handlers for the same event.
+
+### Wired into existing primitives
+
+- `FAFMemory.__init__` accepts an optional `bus` kwarg; defaults to a
+  fresh `ContextBus()`.
+- `FAFMemory.bus` property exposes the bus.
+- `FAFMemory.start_bus()` / `stop_bus()` for explicit lifecycle.
+- `FAFMemory.etch()` now publishes `soul.updated` on success.
+- `attach_auto_merge` publishes `merge.starting` and `merge.completed`
+  (or `merge.completed` with `error` on the failure path) inside the
+  shutdown callback.
+- `on_session_start` publishes `session.resumed` after the resumption
+  pass completes.
+- `make_etch_tool` / `make_recall_tool` / `make_paralinguistic_tool` /
+  `make_merge_tool` factories accept an optional `bus` arg (defaults
+  to `mem.bus`) and emit `tool.about_to_run` + `tool.completed` around
+  the tool body. `make_paralinguistic_tool` also emits
+  `paralinguistic.detected` on the success path.
+
+### Tests
+
+- 102 / 102 passing (was 85). 17 new tests cover bus lifecycle
+  (idempotent start/stop, auto-start on emit), async + sync + decorator
+  subscription, multi-handler fan-out, event isolation, off()
+  unsubscription, raising-handler isolation with logging, queue-full
+  backpressure with warning, FAFMemory.bus exposure, bus injection via
+  constructor, convenience emitters, and tool-call payload shape.
+
+---
+
 ## [0.0.8] — 2026-04-27
 
 ### Added — cross-session resumption
@@ -140,5 +199,6 @@ gate.
 
 ---
 
+[0.0.9]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/Wolfe-Jam/grok-faf-voice/compare/v0.0.6...v0.0.7

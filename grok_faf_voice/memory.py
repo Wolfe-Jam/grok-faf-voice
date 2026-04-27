@@ -30,6 +30,7 @@ from grok_faf_voice._merge_models import (
     MergePayloadEntry,
     MergeResult,
 )
+from grok_faf_voice.context_bus import BusEvent, ContextBus
 from grok_faf_voice.ledger import NullVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
@@ -142,12 +143,18 @@ class FAFMemory:
         token: str | None = None,
         mcp_url: str = MCPAAS_URL,
         ledger: VoiceSessionLedger | None = None,
+        bus: ContextBus | None = None,
     ) -> None:
         self._soul = soul
         self._token = token or os.environ.get("MCPAAS_TOKEN")
         self._mcp_url = mcp_url
         self._scratchpad = Scratchpad()
         self.ledger: VoiceSessionLedger = ledger or NullVoiceSessionLedger()
+        # Context Bus — async pub/sub for voice-memory events. Created
+        # eagerly so subscribers can register before any session work
+        # begins. Auto-starts on first emit; explicit start_bus() is
+        # available for callers that prefer determinism.
+        self._bus: ContextBus = bus or ContextBus()
         # Guards for compose-with-merge_now. Set to True at the success
         # tail of `merge()` so the shutdown callback can no-op when the
         # explicit user-triggered merge already ran.
@@ -164,6 +171,29 @@ class FAFMemory:
     def scratchpad(self) -> Scratchpad:
         """The in-session scratchpad. Ephemeral; cleared on init."""
         return self._scratchpad
+
+    @property
+    def bus(self) -> ContextBus:
+        """The Context Bus — async pub/sub for voice-memory events.
+
+        Subscribers register via ``mem.bus.on(BusEvent.X, handler)`` or
+        ``mem.bus.on_sync(BusEvent.X, handler)``. The bus auto-starts on
+        first emit; call ``await mem.start_bus()`` to start it eagerly.
+        """
+        return self._bus
+
+    async def start_bus(self) -> None:
+        """Start the bus's dispatcher task eagerly.
+
+        Optional — the bus auto-starts on the first ``emit`` call.
+        Useful when you want subscribers to be active before any
+        session work begins, e.g. in agent entrypoints.
+        """
+        await self._bus.start()
+
+    async def stop_bus(self) -> None:
+        """Stop the bus's dispatcher task. Idempotent."""
+        await self._bus.stop()
 
     async def etch(
         self,
@@ -202,9 +232,15 @@ class FAFMemory:
         try:
             async with Client(self._mcp_url) as client:
                 result = await client.call_tool("write_soul", args)
-                return _first_text(result)
+                text = _first_text(result)
         except ToolError as e:
             raise self._wrap_tool_error(e, op="etch") from e
+
+        await self._bus.emit(
+            BusEvent.SOUL_UPDATED,
+            {"soul": self._soul, "type": type, "tags": tags or []},
+        )
+        return text
 
     async def get(self) -> str:
         """Read the soul's current state via MCPaaS get_soul.
@@ -574,6 +610,7 @@ class FAFMemory:
                         return
                 self._merge_in_progress = True
 
+            await self._bus.emit_merge_starting(reason="auto-merge on shutdown")
             try:
                 result = await self.merge(strategy=strategy)
                 await self.ledger.log_merge_attempt(
@@ -585,6 +622,7 @@ class FAFMemory:
                     kept_ephemeral=result.get("kept_ephemeral", 0),
                     overall_notes=result.get("overall_notes"),
                 )
+                await self._bus.emit_merge_completed(result=result)
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).warning(
                     "auto-merge failed (non-fatal): %s", exc
@@ -594,6 +632,10 @@ class FAFMemory:
                     soul=self._soul,
                     status="partial_or_failed",
                     error=str(exc),
+                )
+                await self._bus.emit(
+                    BusEvent.MERGE_COMPLETED,
+                    {"error": str(exc), "status": "partial_or_failed"},
                 )
             finally:
                 self._merge_in_progress = False
@@ -742,13 +784,15 @@ class FAFMemory:
                 )
                 failed += 1
 
-        return {
+        summary = {
             "resumed": len(incomplete),
             "succeeded": succeeded,
             "failed": failed,
             "abandoned": abandoned,
             "user_messaged": user_messaged,
         }
+        await self._bus.emit_session_resumed(summary)
+        return summary
 
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
