@@ -271,6 +271,46 @@ async def test_update_tools_patch_idempotent():
 # ----------------------------------------------------------------
 
 
+async def test_wrapper_fires_through_function_tool_call_path():
+    """Sanity check the LiveKit-realistic dispatch path.
+
+    LiveKit's generation.py wraps the FunctionTool in functools.partial
+    and invokes it as ``await function_callable()`` — which routes
+    through ``FunctionTool.__call__`` (lines 210-213 of tool_context.py),
+    which reads ``self._func`` at call time. This test confirms our
+    ``_func`` swap is hit through that path, not just through direct
+    ``tool._func()`` invocation.
+    """
+    import functools
+
+    mem = FAFMemory("grok", token="t")
+    await mem.start_bus()
+
+    received: list[BusEventPayload] = []
+
+    async def on_post(payload: BusEventPayload) -> None:
+        received.append(payload)
+
+    mem.bus.on(BusEvent.TOOL_COMPLETED, on_post)
+
+    user_tool = _make_user_tool("dispatch_path")
+    agent = _FakeAgent(tools=[user_tool])
+    enable_global_tool_bus(mem, agent)
+
+    # Invoke through the same surface LiveKit's dispatch uses.
+    function_callable = functools.partial(agent.tools[0])
+    await function_callable()
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1, (
+        "wrapper must fire through FunctionTool.__call__, "
+        "not just through direct ._func() invocation"
+    )
+    assert received[0].payload["success"] is True
+
+    await mem.stop_bus()
+
+
 async def test_factory_tools_still_emit_domain_events_after_global_wrap():
     """make_paralinguistic_tool emits paralinguistic.detected on success.
     The global wrapper must not silence that domain-specific event.
