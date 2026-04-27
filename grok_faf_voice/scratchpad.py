@@ -1,9 +1,8 @@
 """Scratchpad — in-memory store for the current voice session.
 
-Gate 2 surface: simple key/value store + manual update API.
-Gate 4 enrichment: each entry carries a ``ScratchpadEntry`` with
-``priority`` and ``tag`` metadata so ``FAFMemory.merge()`` can
-decide what's permanent vs ephemeral at session end.
+Simple key/value store with optional ``priority`` and ``tag`` metadata
+on each entry, so ``FAFMemory.merge()`` can decide what's permanent
+vs ephemeral at session end.
 
 The scratchpad is ephemeral by default — it lives in process memory
 and dies with the session. Persistence happens via FAFMemory.etch()
@@ -41,9 +40,9 @@ class ScratchpadEntry:
 class Scratchpad:
     """In-memory key/value store for the current voice session.
 
-    Backward-compatible with the Gate 2 API (``update(key, value)``,
-    ``get(key)``). Gate 4 adds optional ``priority`` / ``tag`` kwargs
-    on update, plus ``get_entry`` / ``all_entries`` for merge access.
+    Supports both the simple call (``update(key, value)``, ``get(key)``)
+    and the merge-aware variant with optional ``priority`` / ``tag``
+    kwargs, plus ``get_entry`` / ``all_entries`` for merge access.
 
     Examples
     --------

@@ -5,13 +5,13 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.8] — 2026-04-27 — Gate 5
+## [0.0.8] — 2026-04-27
 
 ### Added — cross-session resumption
 
-The fifth Voice Memory Layer gap closed. Incomplete merges from prior
-sessions are silently retried on session start. 95% of recoveries are
-invisible; the user only hears about it when severity is high.
+Incomplete merges from prior sessions are silently retried on session
+start. The user only hears about it when severity is high
+(`retry_count ≥ 2` or many failed entries from a single attempt).
 
 - `MergeAttempt` dataclass — full schema for audit + resumption.
 - `VoiceSessionLedger.log_merge_attempt` now returns
@@ -44,13 +44,14 @@ invisible; the user only hears about it when severity is high.
 
 ---
 
-## [0.0.7] — 2026-04-27 — Gate 4.5
+## [0.0.7] — 2026-04-27
 
 ### Added — tool latency discipline + reliable shutdown
 
-Closes the SuperGrok 4.3 beta consult (Q12–Q15b) into one cohesive
-ship. The realtime stream goes silent during tool execution, and
-fire-and-forget shutdown loses data.
+The realtime stream goes silent during tool execution, and
+fire-and-forget shutdown can lose data. This release adds explicit
+verbal bridges for fast tools, a `session.say()` hold for the
+multi-second merge, and an awaitable shutdown callback.
 
 - `LATENCY_BRIDGE_INSTRUCTIONS` constant — system-prompt reinforcement
   string that backstops per-tool docstrings.
@@ -75,15 +76,15 @@ fire-and-forget shutdown loses data.
 
 ### Changed
 
-- `XAI_CHAT_MODEL_DEFAULT` → `grok-4-1-fast-reasoning` (per Q12).
+- `XAI_CHAT_MODEL_DEFAULT` → `grok-4-1-fast-reasoning`.
 - `_grok_decides_split` now uses xAI structured outputs
   (`response_format=json_schema`, strict). Markdown-fence parsing +
   `try/except json.loads` fallback removed.
 - New `grok_faf_voice/_merge_models.py` — Pydantic models
   (`MergePayloadEntry`, `MergeDecision`, `MergeResult`) + system /
   user prompt templates.
-- Three-action result (`promote` / `keep_ephemeral` /
-  `merge_into`-as-promote at Gate 4.5; true consolidation at Gate 5+).
+- Three-action merge result (`promote` / `keep_ephemeral` /
+  `merge_into` collapsed to `promote` for now).
 - `FAFMemory.merge()` extended return shape: adds `merged`,
   `kept_ephemeral`, `overall_notes` keys (back-compat preserved).
 - `FAFMemory.tools(session)` and `make_merge_tool(mem, session)` now
@@ -92,52 +93,50 @@ fire-and-forget shutdown loses data.
 
 ### Tests
 
-- 74 / 74 passing (was 26). 48 new tests cover Q12 structured outputs,
-  Q14/Q14b latency patterns, Q15/Q15b shutdown contract — including
-  edge cases for ledger writes on success and failure, completion-flag
-  no-op, session-without-id defensive guard, and merge() six-key
-  shape across all three strategies.
+- 74 / 74 passing (was 26). New tests cover structured-output merge
+  paths, latency-pattern docstrings, shutdown-contract edge cases
+  (ledger writes on success and failure, completion-flag no-op,
+  session-without-id defensive guard), and the extended `merge()`
+  return shape across all strategies.
 
 ---
 
-## [0.0.x] — earlier — Gates 0-4
+## [0.0.x] — earlier
 
-### Gate 4 — Smart Merge Engine
+### Smart Merge Engine
 
-`FAFMemory.merge(strategy=...)` promotes scratchpad → permanent soul
-memory at session end. Strategies: `heuristic` (default, free, fast),
-`grok-decides` (LLM-judged), `merge_all`. The third of five MCP-gaps
-shipped.
+`FAFMemory.merge(strategy=...)` promotes scratchpad entries to
+permanent soul memory at session end. Strategies: `heuristic`
+(default, free, fast), `grok-decides` (LLM-judged), `merge_all`.
 
 ### Level-2 utility — `grok_faf_voice.utils.transcribe`
 
 xAI STT direct REST endpoint with `ffmpeg` pre-extract — works around
-LiveKit STT wrapper's hardcoded 30s timeout. Library + CLI entry.
+the LiveKit STT wrapper's hardcoded 30s timeout. Library + CLI entry.
 
-### Gate 3 — Paralinguistic Tags
+### Paralinguistic Tags
 
 `FAFMemory.etch_paralinguistic` records HOW the user spoke (tone,
-emotional state, speaking style, interruption pattern). The most
-demonstrable MCP gap. `paralinguistic_summary` surfaces recent
-markers for next-session awareness.
+emotional state, speaking style, interruption pattern).
+`paralinguistic_summary` surfaces recent markers for next-session
+awareness.
 
-### Gate 2 — FAFMemory etch + recall + Scratchpad + LiveKit tools
+### Etch + recall + Scratchpad + LiveKit tools
 
 The minimal voice memory layer. `mem.etch(content)` writes durably to
 MCPaaS via the MCP protocol; `mem.get()` reads back. `Scratchpad`
-exposes in-session key/value with priority + smart-tag for Gate 4.
-`mem.tools()` returns `etch_memory` + `recall_memory` `@function_tool`
-wrappers ready to attach to a LiveKit `Agent`.
+exposes in-session key/value with priority + smart-tag.
+`mem.tools()` returns `@function_tool` wrappers ready to attach to a
+LiveKit `Agent`.
 
-### Gate 1 — FAFContext + FAFMemory siblings
+### FAFContext + FAFMemory siblings
 
 The two first-class objects of the SDK. Five-line install works.
 
-### Gate 0 — purposeful rebuild
+### Foundations
 
-Reset from v0.2.0 scaffolding to ship the Voice Memory Layer thesis
-on its own terms. CI matrix + ruff + coverage + conftest fixtures —
-tests are the only gate.
+CI matrix + ruff + coverage + conftest fixtures — tests are the only
+gate.
 
 ---
 

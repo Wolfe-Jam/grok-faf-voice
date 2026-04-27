@@ -3,8 +3,8 @@
 Records every Smart Merge attempt (success and failure) so that:
 
 - Auditing: callers can reconstruct what was merged when, at which session
-- Resumption (Gate 5): a future session can read incomplete merges and
-  retry the failed entries instead of silently dropping them
+- Resumption: a future session can read incomplete merges and retry
+  the failed entries instead of silently dropping them
 
 The Protocol is the SDK's contract; concrete implementations are the
 caller's choice. The SDK ships ``NullVoiceSessionLedger`` (default,

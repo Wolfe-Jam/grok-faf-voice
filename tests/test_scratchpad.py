@@ -57,7 +57,7 @@ def test_contains():
     assert "absent" not in pad
 
 
-# ---- Gate 4 — ScratchpadEntry metadata ----
+# ---- ScratchpadEntry metadata ----
 
 
 def test_default_priority_is_medium():

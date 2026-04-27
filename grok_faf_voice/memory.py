@@ -1,19 +1,15 @@
-"""FAFMemory — live voice memory layer for Grok Voice agents.
+"""FAFMemory — live voice memory for Grok Voice agents.
 
-The Voice Memory Layer that the static `.faf` (FAFContext) can't
-provide: audio-native, session-persistent primitives. At Gate 2:
-etch (write_soul) + recall (get_soul) over MCPaaS, plus a Scratchpad
-for in-session ephemeral state.
+The audio-native, session-persistent primitives the static `.faf`
+(FAFContext) can't provide: etch (write_soul) + recall (get_soul)
+over MCPaaS, plus a Scratchpad for in-session ephemeral state, a
+Smart Merge Engine that promotes scratchpad → soul at session end,
+a Voice Session Ledger for audit + cross-session resumption, and
+paralinguistic markers (how the user spoke, not just what they said).
 
 Persistence is via the MCP protocol at `https://mcpaas.live/mcp`,
 served over Streamable HTTP. Auth is per-soul via an MCPaaS token
 (env `MCPAAS_TOKEN` or constructor arg).
-
-Future gates extend the surface:
-- Gate 3: Paralinguistic Tags (.fafm schema extension)
-- Gate 4: Smart Merge Engine (scratchpad → soul at session end)
-- Gate 5: Voice Session Ledger (cross-call welcome-back)
-- Gate 6: Real-time Context Bus (sub-80ms mid-stream context mutation)
 """
 
 from __future__ import annotations
@@ -42,9 +38,9 @@ if TYPE_CHECKING:
 
 MCPAAS_URL = "https://mcpaas.live/mcp"
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
-# grok-4-1-fast-reasoning per Q12: same price as non-reasoning, judgment-grade
-# for memory consolidation. The reasoning trace dramatically improves recency
-# vs importance, emotional weight, and over-consolidation calls.
+# Reasoning variant — same price as non-reasoning, judgment-grade for
+# memory consolidation. The reasoning trace dramatically improves
+# recency vs importance, emotional weight, and over-consolidation calls.
 XAI_CHAT_MODEL_DEFAULT = "grok-4-1-fast-reasoning"
 
 # System-prompt reinforcement for tool latency discipline. Append to your
@@ -122,7 +118,7 @@ class FAFMemory:
     Examples
     --------
     >>> mem = FAFMemory("grok", token="wolfe-68-orange")
-    >>> await mem.etch("Gate 2 shipped", type="note", tags=["sdk", "milestone"])
+    >>> await mem.etch("first memory", type="note", tags=["sdk", "milestone"])
     >>> soul_text = await mem.get()
 
     LiveKit integration::
@@ -243,7 +239,7 @@ class FAFMemory:
         return cls(f"{op.capitalize()} failed: {msg.strip()}")
 
     # ----------------------------------------------------------------
-    # Paralinguistic markers (Gate 3)
+    # Paralinguistic markers
     #
     # Voice memory captures HOW the user spoke, not just WHAT was said.
     # Markers are stored as standard `write_soul` entries with a
@@ -304,7 +300,7 @@ class FAFMemory:
         )
 
     # ----------------------------------------------------------------
-    # Smart Merge Engine (Gate 4)
+    # Smart Merge Engine
     #
     # Promotes Scratchpad entries to permanent soul memory at session
     # end. Two strategies: a fast/free heuristic (default), and a
@@ -346,8 +342,8 @@ class FAFMemory:
 
             ``promoted`` and ``discarded`` are preserved for backward
             compatibility. ``kept_ephemeral`` is a semantic alias for
-            ``discarded``. ``merged`` is reserved for Gate 5+ (true
-            scratchpad-internal consolidation); always 0 today.
+            ``discarded``. ``merged`` is reserved for a future release
+            (true scratchpad-internal consolidation); always 0 today.
             ``overall_notes`` is populated by the grok-decides strategy
             from the LLM's MergeResult; None for heuristic / merge_all.
         """
@@ -430,12 +426,11 @@ class FAFMemory:
 
         Hits xAI's chat completions REST endpoint directly (same
         pattern as utils/transcribe.py) with structured outputs bound
-        to ``MergeResult``'s JSON schema. Per Q12+Q12b+Q12c:
-        guaranteed-valid response shape, no fallback parser needed.
+        to ``MergeResult``'s JSON schema — guaranteed-valid response
+        shape, no fallback parser needed.
 
-        ``merge_into`` decisions are treated as ``promote`` for now
-        (Gate 4.5). True scratchpad-internal consolidation lands at
-        Gate 5+.
+        ``merge_into`` decisions are treated as ``promote`` for now;
+        true scratchpad-internal consolidation lands in a future release.
         """
         api_key = os.environ.get("XAI_API_KEY")
         if not api_key:
@@ -614,7 +609,7 @@ class FAFMemory:
             )
 
     # ----------------------------------------------------------------
-    # Cross-session resumption (Gate 5 — Q15d)
+    # Cross-session resumption
     # ----------------------------------------------------------------
 
     #: Below this retry count, resumption is silent (no user-facing audio).
@@ -784,9 +779,10 @@ class FAFMemory:
     def tools(self, session: AgentSession) -> list:
         """Return LiveKit `@function_tool` wrappers for the agent.
 
-        At Gate 4.5: etch_memory + recall_memory + note_paralinguistic
-        + merge_now. Pass into the Agent (or AgentSession) ``tools=``
-        list to expose memory commands to the voice agent.
+        Returns four tools: ``etch_memory`` + ``recall_memory`` +
+        ``note_paralinguistic`` + ``merge_now``. Pass into the Agent
+        (or AgentSession) ``tools=`` list to expose memory commands
+        to the voice agent.
 
         ``session`` is required because ``merge_now`` uses an explicit
         verbal hold (``await session.say("Give me just a moment...")``)

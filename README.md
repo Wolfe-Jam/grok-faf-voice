@@ -20,25 +20,19 @@ mem = FAFMemory("grok", token="...")         # live voice memory layer
 
 ---
 
-## What MCP couldn't do
+## What's in the box
 
-MCP owns *context* — literally, in the protocol name. But voice agents
-need more than static context. They need **memory** — live, audio-aware,
-session-spanning state that survives interruptions, model switches, and
-the gap between yesterday and today.
+Voice agents need state that survives interruptions, model switches,
+and the gap between yesterday and today. `grok-faf-voice` ships the
+primitives:
 
-The Voice Memory Layer fills five gaps MCP doesn't reach:
-
-| Gap | What it does | Built-in |
-|---|---|---|
-| **Scratchpad** | In-session ephemeral key/value with priority + smart-tag | ✅ |
-| **Paralinguistic Tags** | Records HOW the user spoke (tone, emotional state, pace) | ✅ |
-| **Smart Merge Engine** | Promotes scratchpad → permanent soul on session end, LLM-judged | ✅ |
-| **Session Ledger** | Auditable record of every merge attempt, idempotent retries | ✅ |
-| **Cross-session resumption** | Silently retries unfinished merges from prior sessions | ✅ |
-| Real-time Context Bus | Sub-80ms mid-stream context mutation | _post-launch_ |
-
-Five of six shipped. v0.0.8 is production-grade.
+| Primitive | What it does |
+|---|---|
+| **Scratchpad** | In-session ephemeral key/value with priority + smart-tag |
+| **Paralinguistic Tags** | Records HOW the user spoke (tone, emotional state, pace) |
+| **Smart Merge Engine** | Promotes scratchpad → permanent soul on session end, LLM-judged |
+| **Session Ledger** | Auditable record of every merge attempt, idempotent retries |
+| **Cross-session resumption** | Silently retries unfinished merges from prior sessions |
 
 ---
 

@@ -311,7 +311,7 @@ async def test_get_wraps_tool_error_as_recall_error():
     assert "Recall failed" in str(exc_info.value)
 
 
-# ---- Gate 3 — Paralinguistic markers ----
+# ---- Paralinguistic markers ----
 
 
 async def test_etch_paralinguistic_payload_shape():
@@ -476,7 +476,7 @@ soul:
     assert summary == ""
 
 
-# ---- Gate 4 — Smart Merge Engine ----
+# ---- Smart Merge Engine ----
 
 
 async def test_merge_empty_scratchpad_returns_zeros():
@@ -697,7 +697,7 @@ async def test_merge_grok_decides_promote_keep_split():
 
 
 async def test_merge_grok_decides_treats_merge_into_as_promote():
-    """Gate 4.5: merge_into action collapses to promote until Gate 5+."""
+    """merge_into action collapses to promote until full consolidation lands."""
     mem = FAFMemory("grok", token="test-token")
     mem.scratchpad.update("a", "alpha")
     mem.scratchpad.update("b", "beta")
@@ -732,7 +732,7 @@ async def test_merge_grok_decides_treats_merge_into_as_promote():
             with patch("grok_faf_voice.memory.Client", _FakeMcpClient):
                 result = await mem.merge(strategy="grok-decides")
 
-    # Both entries promoted (merge_into → promote at Gate 4.5)
+    # Both entries promoted (merge_into folded into promote)
     assert result["promoted"] == 2
     assert result["discarded"] == 0
 
@@ -770,7 +770,7 @@ async def test_merge_grok_decides_keeps_undecided_entries_conservative():
 
 
 # ----------------------------------------------------------------
-# Voice Session Ledger (Gate 4.5 — Q15/Q15b)
+# Voice Session Ledger
 # ----------------------------------------------------------------
 
 
@@ -878,7 +878,7 @@ async def test_merge_sets_completion_flag_and_clears_scratchpad():
     assert "merged" in result
     assert "kept_ephemeral" in result
     assert "overall_notes" in result
-    assert result["merged"] == 0  # Gate 4.5 — no real consolidation yet
+    assert result["merged"] == 0  # no real consolidation yet
 
 
 async def test_merge_empty_scratchpad_sets_completion_flag():
@@ -892,7 +892,7 @@ async def test_merge_empty_scratchpad_sets_completion_flag():
 
 
 # ----------------------------------------------------------------
-# attach_auto_merge — canonical shutdown pattern (Q15/Q15b)
+# attach_auto_merge — canonical shutdown pattern
 # ----------------------------------------------------------------
 
 
@@ -1074,7 +1074,7 @@ async def test_shutdown_callback_handles_session_without_id_attribute():
 
 
 # ----------------------------------------------------------------
-# merge() extended return shape (Q12/Q15b bridge)
+# merge() extended return shape
 # ----------------------------------------------------------------
 
 
@@ -1154,7 +1154,7 @@ async def test_merge_grok_decides_populates_overall_notes():
 
 
 # ----------------------------------------------------------------
-# Pattern B — make_merge_tool verbal hold (Q14b)
+# Pattern B — make_merge_tool verbal hold
 # ----------------------------------------------------------------
 
 
@@ -1196,7 +1196,7 @@ async def test_merge_now_emits_hold_and_confirmation():
 
 async def test_merge_now_uses_grok_decides_strategy():
     """Pattern B always routes through strategy='grok-decides' so the
-    LLM judgment runs (heuristic was the Gate 4 default; Gate 4.5 elevates).
+    LLM judgment runs (rather than the simpler heuristic split).
     """
     from grok_faf_voice.tools import make_merge_tool
 
@@ -1305,7 +1305,7 @@ async def test_in_memory_ledger_respects_passed_timestamp():
 
 
 # ----------------------------------------------------------------
-# Gate 5 — cross-session resumption (Q15d)
+# Cross-session resumption
 # ----------------------------------------------------------------
 
 

@@ -1,6 +1,6 @@
 """Hello, Grok — with memory AND etch.
 
-Full Gate 2 surface: the agent loads project context AND can etch
+Full memory surface: the agent loads project context AND can etch
 voice memories to a persistent soul.
 
 Run::
@@ -54,8 +54,8 @@ server = AgentServer()
 @server.rtc_session()
 async def entrypoint(ctx: agents.JobContext):
     # server_vad keeps interruption handling reliable on the realtime
-    # path. Threshold/silence/prefix values are the SuperGrok-recommended
-    # defaults for natural conversational turn-taking.
+    # path. Threshold/silence/prefix values are tuned defaults for
+    # natural conversational turn-taking.
     session = AgentSession(
         llm=xai.realtime.RealtimeModel(
             voice="Ara",
@@ -79,10 +79,10 @@ async def entrypoint(ctx: agents.JobContext):
 
     await session.start(room=ctx.room, agent=agent)
 
-    # Cross-session resumption (Gate 5): silently retry any merge
-    # attempts that didn't complete in a prior session. The user
-    # only hears about it when severity is high (retry_count ≥ 2 or
-    # many failed entries from a single attempt).
+    # Cross-session resumption: silently retry any merge attempts that
+    # didn't complete in a prior session. The user only hears about it
+    # when severity is high (retry_count ≥ 2 or many failed entries
+    # from a single attempt).
     await mem.on_session_start(session)
 
 

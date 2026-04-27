@@ -4,9 +4,9 @@ Two first-class siblings + the Scratchpad primitive:
 
 - ``FAFContext`` — static project DNA, read once per session.
   Loads `.faf` (`application/vnd.faf+yaml`).
-- ``FAFMemory``  — live voice memory layer. Reads/writes a soul on
-  MCPaaS via the MCP protocol. Loads `.fafm`
-  (`application/vnd.fafm+yaml` planned).
+- ``FAFMemory``  — live voice memory. Reads/writes a soul on MCPaaS
+  via the MCP protocol. Loads `.fafm` (`application/vnd.fafm+yaml`
+  planned).
 - ``Scratchpad`` — in-session ephemeral key/value store, composed
   by ``FAFMemory``.
 

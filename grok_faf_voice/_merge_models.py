@@ -1,4 +1,4 @@
-"""Pydantic models for the Smart Merge Engine (Q12 series).
+"""Pydantic models for the Smart Merge Engine.
 
 Wire format for the ``grok-decides`` merge strategy. xAI's structured
 outputs binds the chat completion to ``MergeResult``'s JSON schema, so

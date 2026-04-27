@@ -1,7 +1,7 @@
 """Paralinguistic demo — voice memory that remembers HOW you spoke.
 
-Gate 3 surface: the agent records tone / emotional state / speaking style
-across sessions and opens future calls with awareness.
+The agent records tone / emotional state / speaking style across
+sessions and opens future calls with awareness.
 
 Run::
 
