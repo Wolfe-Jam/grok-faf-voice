@@ -82,12 +82,16 @@ def test_tools_returns_quartet():
 async def test_etch_get_round_trip():
     """Live MCPaaS round-trip: write a tagged note, read it back.
 
-    Writes to the `grok` dev soul (per `grok-soul-default-dev-target`
-    convention). Token from MCPAAS_TOKEN env or the canonical dev
-    token if env is unset.
+    Writes to the soul named in ``FAF_TEST_SOUL`` (default: ``grok``).
+    Token must be in ``MCPAAS_TOKEN`` env — test is skipped via
+    ``--run-network`` opt-in so this only runs when a dev explicitly
+    asks for live MCPaaS round-trips.
     """
-    token = os.environ.get("MCPAAS_TOKEN", "wolfe-68-orange")
-    mem = FAFMemory("grok", token=token)
+    token = os.environ.get("MCPAAS_TOKEN")
+    if not token:
+        pytest.skip("MCPAAS_TOKEN not set — required for network tests")
+    soul = os.environ.get("FAF_TEST_SOUL", "grok")
+    mem = FAFMemory(soul, token=token)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     marker = f"pytest-roundtrip-{timestamp}"
@@ -1710,11 +1714,17 @@ async def test_on_session_start_continues_when_user_message_fails():
 
 @pytest.mark.network
 async def test_etch_paralinguistic_round_trip():
-    """Live MCPaaS round-trip: etch a paralinguistic marker on grok soul,
-    verify it's retrievable via paralinguistic_summary.
+    """Live MCPaaS round-trip: etch a paralinguistic marker on the test
+    soul, verify it's retrievable via paralinguistic_summary.
+
+    Soul defaults to ``grok``; override via ``FAF_TEST_SOUL`` env.
+    Skipped unless MCPAAS_TOKEN is set.
     """
-    token = os.environ.get("MCPAAS_TOKEN", "wolfe-68-orange")
-    mem = FAFMemory("grok", token=token)
+    token = os.environ.get("MCPAAS_TOKEN")
+    if not token:
+        pytest.skip("MCPAAS_TOKEN not set — required for network tests")
+    soul = os.environ.get("FAF_TEST_SOUL", "grok")
+    mem = FAFMemory(soul, token=token)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     marker_value = f"pytest-tone-{timestamp}"

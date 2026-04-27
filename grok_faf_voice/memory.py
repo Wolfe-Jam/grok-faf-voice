@@ -118,7 +118,7 @@ class FAFMemory:
 
     Examples
     --------
-    >>> mem = FAFMemory("grok", token="wolfe-68-orange")
+    >>> mem = FAFMemory("grok", token=os.environ["MCPAAS_TOKEN"])
     >>> await mem.etch("first memory", type="note", tags=["sdk", "milestone"])
     >>> soul_text = await mem.get()
 
