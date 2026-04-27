@@ -110,3 +110,40 @@ def make_paralinguistic_tool(mem: FAFMemory):
             return f"Could not note: {e}"
 
     return note_paralinguistic
+
+
+def make_merge_tool(mem: FAFMemory):
+    """Return an @function_tool that promotes scratchpad → soul.
+
+    The model fires this when the user signals end-of-conversation
+    with phrases like "save this", "commit our notes", "remember all
+    of this". After firing, the scratchpad is cleared and important
+    items are permanent in the soul.
+    """
+    from grok_faf_voice.memory import (
+        FAFAuthRequiredError,
+        FAFEtchError,
+        FAFMergeError,
+    )
+
+    @function_tool
+    async def merge_now(context: RunContext) -> str:
+        """Promote in-session scratchpad memories to permanent soul.
+
+        Use when the user says "save this", "save what we discussed",
+        "commit our notes", "remember all of this", or otherwise
+        signals they want to lock in the conversation. Returns a
+        count of what was kept and what was discarded.
+        """
+        try:
+            result = await mem.merge()
+            return (
+                f"Saved {result['promoted']} memories. "
+                f"{result['discarded']} discarded as ephemeral."
+            )
+        except FAFAuthRequiredError as e:
+            return str(e)
+        except (FAFEtchError, FAFMergeError) as e:
+            return f"Could not save: {e}"
+
+    return merge_now

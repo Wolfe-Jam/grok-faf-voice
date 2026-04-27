@@ -55,15 +55,18 @@ def test_scratchpad_composed():
     assert len(mem.scratchpad) == 0
 
 
-def test_tools_returns_trio():
-    """tools() returns the etch + recall + paralinguistic trio."""
+def test_tools_returns_quartet():
+    """tools() returns etch + recall + paralinguistic + merge_now."""
     mem = FAFMemory("grok")
     tools = mem.tools()
-    assert len(tools) == 3
-    names = [t.info.name for t in tools]
-    assert "etch_memory" in names
-    assert "recall_memory" in names
-    assert "note_paralinguistic" in names
+    assert len(tools) == 4
+    names = {t.info.name for t in tools}
+    assert names == {
+        "etch_memory",
+        "recall_memory",
+        "note_paralinguistic",
+        "merge_now",
+    }
 
 
 @pytest.mark.network
@@ -462,6 +465,246 @@ soul:
         summary = await mem.paralinguistic_summary()
 
     assert summary == ""
+
+
+# ---- Gate 4 — Smart Merge Engine ----
+
+
+async def test_merge_empty_scratchpad_returns_zeros():
+    """merge() on an empty scratchpad does no I/O and returns zeros."""
+    mem = FAFMemory("grok", token="test-token")
+    result = await mem.merge()
+    assert result["promoted"] == 0
+    assert result["discarded"] == 0
+
+
+async def test_merge_heuristic_keeps_non_ephemeral():
+    """Heuristic strategy: discard 'ephemeral' priority, keep others."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("address", "123 Main St", priority="high")
+    mem.scratchpad.update("name", "James", priority="medium")
+    mem.scratchpad.update("random_url", "x.com/abc", priority="ephemeral")
+
+    captured_etches: list = []
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "Note added"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured_etches.append(args)
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.merge()
+
+    assert result["promoted"] == 2
+    assert result["discarded"] == 1
+    assert result["strategy"] == "heuristic"
+    # Both promoted etches went out
+    assert len(captured_etches) == 2
+    # All carry the [merged] tag
+    for args in captured_etches:
+        assert "merged" in args["tags"]
+    # Scratchpad cleared
+    assert len(mem.scratchpad) == 0
+
+
+async def test_merge_promotes_with_smart_tag_in_tags():
+    """Entries with a tag get that tag in the etched tag list too."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("addr", "123 Main", tag="contact")
+
+    captured: list = []
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured.append(args)
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        await mem.merge()
+
+    assert "merged" in captured[0]["tags"]
+    assert "contact" in captured[0]["tags"]
+
+
+async def test_merge_all_promotes_ephemeral_too():
+    """strategy='merge_all' bypasses the priority filter."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("trash", "x", priority="ephemeral")
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.merge(strategy="merge_all")
+
+    assert result["promoted"] == 1
+    assert result["discarded"] == 0
+
+
+async def test_merge_unknown_strategy_raises():
+    """Bad strategy name raises ValueError immediately."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("k", "v")
+    with pytest.raises(ValueError, match="Unknown merge strategy"):
+        await mem.merge(strategy="garbage")
+
+
+async def test_merge_grok_decides_parses_keep_discard():
+    """grok-decides strategy: parse JSON decision and apply."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("address", "123 Main")
+    mem.scratchpad.update("trash", "x.com/abc")
+
+    grok_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"keep": ["address"], "discard": ["trash"]}'
+                }
+            }
+        ]
+    }
+
+    class FakeChatResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return grok_response
+
+    class FakeChatClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, headers=None, json=None):
+            return FakeChatResp()
+
+    class FakeMcpResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeMcpClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeMcpResult()
+
+    with patch.dict(os.environ, {"XAI_API_KEY": "test-xai"}):
+        with patch("grok_faf_voice.memory.httpx.AsyncClient", FakeChatClient):
+            with patch("grok_faf_voice.memory.Client", FakeMcpClient):
+                result = await mem.merge(strategy="grok-decides")
+
+    assert result["strategy"] == "grok-decides"
+    assert result["promoted"] == 1
+    assert result["discarded"] == 1
+
+
+async def test_merge_grok_decides_falls_back_conservative_on_bad_json():
+    """If Grok returns garbage, conservative fallback keeps everything."""
+    mem = FAFMemory("grok", token="test-token")
+    mem.scratchpad.update("a", "1")
+    mem.scratchpad.update("b", "2")
+
+    grok_garbage = {"choices": [{"message": {"content": "not-json-at-all"}}]}
+
+    class FakeChatResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return grok_garbage
+
+    class FakeChatClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, headers=None, json=None):
+            return FakeChatResp()
+
+    class FakeMcpResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeMcpClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return FakeMcpResult()
+
+    with patch.dict(os.environ, {"XAI_API_KEY": "test-xai"}):
+        with patch("grok_faf_voice.memory.httpx.AsyncClient", FakeChatClient):
+            with patch("grok_faf_voice.memory.Client", FakeMcpClient):
+                result = await mem.merge(strategy="grok-decides")
+
+    # Conservative: keep everything when parsing fails
+    assert result["promoted"] == 2
+    assert result["discarded"] == 0
 
 
 @pytest.mark.network

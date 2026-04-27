@@ -18,16 +18,19 @@ from grok_faf_voice.memory import (
     FAFAuthRequiredError,
     FAFEtchError,
     FAFMemory,
+    FAFMergeError,
     FAFRecallError,
 )
-from grok_faf_voice.scratchpad import Scratchpad
+from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 __all__ = [
     "FAFAuthRequiredError",
     "FAFContext",
     "FAFEtchError",
     "FAFMemory",
+    "FAFMergeError",
     "FAFRecallError",
     "Scratchpad",
+    "ScratchpadEntry",
 ]
