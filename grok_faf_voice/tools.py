@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 def make_etch_tool(mem: FAFMemory):
     """Return an @function_tool that etches voice content to FAFMemory."""
-    from grok_faf_voice.memory import FAFAuthRequiredError
+    from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
 
     @function_tool
     async def etch_memory(context: RunContext, content: str) -> str:
@@ -41,12 +41,15 @@ def make_etch_tool(mem: FAFMemory):
             return f"Etched: {content}"
         except FAFAuthRequiredError as e:
             return str(e)
+        except FAFEtchError as e:
+            return f"Could not save: {e}"
 
     return etch_memory
 
 
 def make_recall_tool(mem: FAFMemory):
     """Return an @function_tool that reads the current soul state."""
+    from grok_faf_voice.memory import FAFRecallError
 
     @function_tool
     async def recall_memory(context: RunContext) -> str:
@@ -56,6 +59,9 @@ def make_recall_tool(mem: FAFMemory):
         I say last time", or otherwise wants to surface what's in
         the soul. Returns the full soul body.
         """
-        return await mem.get()
+        try:
+            return await mem.get()
+        except FAFRecallError as e:
+            return f"Could not recall: {e}"
 
     return recall_memory

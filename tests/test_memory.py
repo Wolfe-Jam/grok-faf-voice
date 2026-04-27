@@ -200,3 +200,96 @@ async def test_etch_tool_returns_friendly_message_when_no_token():
         result = await callable_fn(None, "hello")
 
         assert "Voice key" in result
+
+
+async def test_etch_wraps_invalid_soul_tool_error():
+    """ToolError 'Invalid soul' from the server is wrapped in
+    FAFEtchError with a friendly message naming the soul.
+    """
+    from fastmcp.exceptions import ToolError
+
+    from grok_faf_voice import FAFEtchError
+
+    mem = FAFMemory("madeup-soul-xyz", token="test-token")
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            raise ToolError(
+                "Invalid soul. Valid: faf, grok, nelly, spacex, wolfe, "
+                "liverpool, smithsonian"
+            )
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        with pytest.raises(FAFEtchError) as exc_info:
+            await mem.etch("hello")
+
+    assert "madeup-soul-xyz" in str(exc_info.value)
+    assert "Invalid soul" in str(exc_info.value)
+    # Original ToolError chained for debug
+    assert exc_info.value.__cause__ is not None
+
+
+async def test_etch_wraps_generic_tool_error():
+    """A non-recognized ToolError is still wrapped as FAFEtchError."""
+    from fastmcp.exceptions import ToolError
+
+    from grok_faf_voice import FAFEtchError
+
+    mem = FAFMemory("grok", token="test-token")
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            raise ToolError("Some unrelated server error")
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        with pytest.raises(FAFEtchError) as exc_info:
+            await mem.etch("hello")
+
+    assert "Etch failed" in str(exc_info.value)
+    assert "Some unrelated server error" in str(exc_info.value)
+
+
+async def test_get_wraps_tool_error_as_recall_error():
+    """ToolError on get_soul is wrapped as FAFRecallError, not FAFEtchError."""
+    from fastmcp.exceptions import ToolError
+
+    from grok_faf_voice import FAFRecallError
+
+    mem = FAFMemory("grok")
+
+    class FakeClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            raise ToolError("Some server-side recall error")
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        with pytest.raises(FAFRecallError) as exc_info:
+            await mem.get()
+
+    assert "Recall failed" in str(exc_info.value)

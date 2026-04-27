@@ -14,8 +14,20 @@ Stateless by default. Memory is a tool, not a baseline.
 """
 
 from grok_faf_voice.context import FAFContext
-from grok_faf_voice.memory import FAFAuthRequiredError, FAFMemory
+from grok_faf_voice.memory import (
+    FAFAuthRequiredError,
+    FAFEtchError,
+    FAFMemory,
+    FAFRecallError,
+)
 from grok_faf_voice.scratchpad import Scratchpad
 
-__version__ = "0.0.3"
-__all__ = ["FAFAuthRequiredError", "FAFContext", "FAFMemory", "Scratchpad"]
+__version__ = "0.0.4"
+__all__ = [
+    "FAFAuthRequiredError",
+    "FAFContext",
+    "FAFEtchError",
+    "FAFMemory",
+    "FAFRecallError",
+    "Scratchpad",
+]

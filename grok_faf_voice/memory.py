@@ -18,14 +18,22 @@ Future gates extend the surface:
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from grok_faf_voice.scratchpad import Scratchpad
 
 MCPAAS_URL = "https://mcpaas.live/mcp"
+
+# Suppress benign fastmcp shutdown noise. The Streamable HTTP
+# transport emits "Session termination failed: 404" on every clean
+# close against mcpaas.live — protocol works, only graceful-shutdown
+# emits the warning. See `reference-mcpaas-write-soul-tool.md` notes.
+logging.getLogger("mcp.client.streamable_http").setLevel(logging.ERROR)
 
 
 class FAFAuthRequiredError(RuntimeError):
@@ -33,6 +41,23 @@ class FAFAuthRequiredError(RuntimeError):
 
     The friendly message guides the dev to the Voice key flow without
     raising a low-level ToolError or surfacing implementation details.
+    """
+
+
+class FAFEtchError(RuntimeError):
+    """Raised when an etch operation fails server-side.
+
+    Wraps lower-level fastmcp/MCP errors with friendly text that names
+    the likely cause (invalid soul, allowlist violation, etc.). The
+    original exception is chained via `__cause__` for debugging.
+    """
+
+
+class FAFRecallError(RuntimeError):
+    """Raised when a recall (get_soul) operation fails server-side.
+
+    Wraps lower-level fastmcp/MCP errors with friendly text. Original
+    exception chained via `__cause__`.
     """
 
 
@@ -128,9 +153,12 @@ class FAFMemory:
         if tags:
             args["tags"] = tags
 
-        async with Client(self._mcp_url) as client:
-            result = await client.call_tool("write_soul", args)
-            return _first_text(result)
+        try:
+            async with Client(self._mcp_url) as client:
+                result = await client.call_tool("write_soul", args)
+                return _first_text(result)
+        except ToolError as e:
+            raise self._wrap_tool_error(e, op="etch") from e
 
     async def get(self) -> str:
         """Read the soul's current state via MCPaaS get_soul.
@@ -139,9 +167,30 @@ class FAFMemory:
         preamble before the first `\\n---\\n` separator; downstream
         consumers can split if they want only the YAML body.
         """
-        async with Client(self._mcp_url) as client:
-            result = await client.call_tool("get_soul", {"soul": self._soul})
-            return _first_text(result)
+        try:
+            async with Client(self._mcp_url) as client:
+                result = await client.call_tool("get_soul", {"soul": self._soul})
+                return _first_text(result)
+        except ToolError as e:
+            raise self._wrap_tool_error(e, op="recall") from e
+
+    def _wrap_tool_error(
+        self, exc: ToolError, *, op: str
+    ) -> FAFEtchError | FAFRecallError:
+        """Build a friendly error from a low-level ToolError.
+
+        Recognises common server-side failures and prefixes them with
+        actionable guidance. Falls back to a generic wrapper otherwise.
+        """
+        msg = str(exc)
+        cls: type = FAFEtchError if op == "etch" else FAFRecallError
+
+        if "Invalid soul" in msg:
+            return cls(
+                f"Soul '{self._soul}' isn't on MCPaaS. {msg.strip()}"
+            )
+
+        return cls(f"{op.capitalize()} failed: {msg.strip()}")
 
     def tools(self) -> list:
         """Return LiveKit `@function_tool` wrappers (etch + recall).
