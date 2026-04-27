@@ -1,15 +1,46 @@
 [project]
 name = "grok-faf-voice"
-version = "0.0.1"
+version = "0.0.8"
 description = "Persistent memory for Grok Voice. LiveKit enabled."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Wolfe-Jam" }]
+keywords = [
+    "grok",
+    "xai",
+    "voice",
+    "livekit",
+    "memory",
+    "persistent-memory",
+    "voice-agent",
+    "mcp",
+    "faf",
+    "realtime",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Conferencing",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "livekit-agents[xai]>=1.4",
     "httpx>=0.28",
     "python-dotenv>=1.0",
     "fastmcp>=3.2",
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -18,11 +49,15 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
+    "build>=1.2",
+    "twine>=5.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Wolfe-Jam/grok-faf-voice"
 Repository = "https://github.com/Wolfe-Jam/grok-faf-voice"
+Changelog = "https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Wolfe-Jam/grok-faf-voice/issues"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
