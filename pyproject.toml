@@ -1,15 +1,34 @@
 [project]
 name = "grok-faf-voice"
-version = "0.0.0"
+version = "0.0.1"
 description = "Persistent memory for Grok Voice. LiveKit enabled."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
 dependencies = [
     "livekit-agents[xai]>=1.4",
     "httpx>=0.28",
     "python-dotenv>=1.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/Wolfe-Jam/grok-faf-voice"
 Repository = "https://github.com/Wolfe-Jam/grok-faf-voice"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["grok_faf_voice*"]
+exclude = ["tests*", "examples*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "network: tests that require live network access (e.g. MCPaaS)",
+]

@@ -6,3 +6,5 @@ livekit-*.log
 dist/
 build/
 *.egg-info/
+.venv/
+.pytest_cache/
