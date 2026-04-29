@@ -1,11 +1,18 @@
 # grok-faf-voice
 
-**Persistent memory for Grok Voice. LiveKit enabled.**
+[![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg)](https://pypi.org/project/grok-faf-voice/)
+[![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg)](https://pypi.org/project/grok-faf-voice/)
+[![License](https://img.shields.io/pypi/l/grok-faf-voice.svg)](https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/Wolfe-Jam/grok-faf-voice/ci.yml?branch=main&label=tests)](https://github.com/Wolfe-Jam/grok-faf-voice/actions/workflows/ci.yml)
 
-One import. Done.
+**The Voice Memory Layer (VML) for Grok Voice. LiveKit enabled.**
 
-Grok calls it **eternal soul state.**
-What it means: memory that survives sessions, devices, model switches, even reinstalls.
+Voice agents forget. This fixes it. One import. Done.
+
+Persistent memory across sessions, devices, and model switches. Grok
+calls it **eternal soul state.** This SDK is the reference
+implementation of VML — the persistence layer for what your agent
+remembers.
 
 ```bash
 pip install grok-faf-voice
@@ -20,15 +27,43 @@ mem = FAFMemory("grok", token="...")         # live voice memory
 
 ---
 
+## Three files, three audiences
+
+```
+pyproject.toml      Python packaging — for pip / PyPI
+project.faf         Foundational AI-context — for any AI
+README.md           this file — for humans
+grok_faf_voice/     source code — for the runtime
+```
+
+The fourth is the implementation. The first three describe it.
+
+---
+
+## Two layers, one ecosystem
+
+```
+.faf    →  Foundational Context Layer    project IS — static, read once
+.fafm   →  Voice Memory Layer (VML)      agent REMEMBERS — mutating, persisted
+```
+
+Two persistent context formats from the FAF family. `.faf` defines
+the project; `.fafm` preserves the soul. This SDK is the reference
+implementation of VML. The `.fafm` media type
+(`application/vnd.fafm+yaml`) is planned for IANA registration after
+`.faf` and FAFb.
+
+---
+
 ## What it sounds like
 
 ```
 $ python examples/hello_grok_with_etch.py console
 
-[Agent]: Welcome back. Last time you mentioned shipping version 0.0.12,
+[Agent]: Welcome back. Last time you mentioned the cross-session loop,
          and you sounded excited about the test results. What's next?
 
-[You]:   Etch this — the cross-session loop is verified.
+[You]:   Etch this — the loop is verified.
 
 [Agent]: Got it. Jotting that down.
 ```
@@ -79,7 +114,40 @@ human_context:
 
 ---
 
-## Quickstart
+## Quickstart — minimal
+
+The shortest path from zero to a Grok Voice agent that remembers:
+
+```python
+import os
+from livekit.agents import Agent, AgentServer, AgentSession, agents
+from livekit.plugins import xai
+from grok_faf_voice import FAFContext, FAFMemory
+
+faf = FAFContext("project.faf")
+mem = FAFMemory("grok", token=os.environ.get("MCPAAS_TOKEN"))
+server = AgentServer()
+
+@server.rtc_session()
+async def entrypoint(ctx):
+    session = AgentSession(llm=xai.realtime.RealtimeModel(voice="Ara"))
+    agent = Agent(
+        instructions=f"{faf.system_prompt()}\n\n{await mem.recall_for_prompt()}",
+        tools=mem.tools(session),
+    )
+    await session.start(room=ctx.room, agent=agent)
+
+if __name__ == "__main__":
+    agents.cli.run_app(server)
+```
+
+That's it. The agent loads project DNA, opens with prior soul context, and exposes `etch_memory` / `recall_memory` / `note_paralinguistic` / `merge_now` as voice tools.
+
+For auto-merge, ledger, Context Bus, and resumption, see the **Full integration** below.
+
+---
+
+## Full integration
 
 ```python
 import os
@@ -163,8 +231,9 @@ Three first-class objects:
 
 - **`FAFContext`** — static project DNA, read once per session.
   Loads `.faf` (`application/vnd.faf+yaml`, IANA-registered).
-- **`FAFMemory`** — live voice memory. Reads/writes a soul on MCPaaS
-  via the MCP protocol. Composes the scratchpad and ledger.
+- **`FAFMemory`** — the Voice Memory Layer (VML) implementation.
+  Reads/writes a soul on MCPaaS via the MCP protocol. Composes the
+  scratchpad and ledger. The runtime side of `.fafm`.
 - **`Scratchpad`** — in-session ephemeral key/value store with
   priority + smart-tag metadata for the merge engine.
 
@@ -274,8 +343,6 @@ Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI
 
 ## License
 
-MIT.
-
-Do use FAF, fork it, share it, build with it, enjoy it.
-
 **Don't copy FAF brand. Do your own.**
+
+The code is MIT — fork it, ship it, embed it, enjoy it. The brand is not.

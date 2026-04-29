@@ -1,12 +1,22 @@
-"""grok-faf-voice — Persistent memory for Grok Voice. LiveKit enabled.
+"""grok-faf-voice — the Voice Memory Layer (VML) for Grok Voice.
 
-Two first-class siblings + the Scratchpad primitive:
+Reference implementation of VML — the persistence layer for what an
+agent remembers across sessions, devices, and model switches. LiveKit
+enabled.
+
+Two layers, one FAF ecosystem:
+
+- ``.faf``  — Foundational Context Layer (static, read once)
+- ``.fafm`` — Voice Memory Layer / VML (mutating, persisted)
+
+Three first-class objects + the Scratchpad primitive:
 
 - ``FAFContext`` — static project DNA, read once per session.
-  Loads `.faf` (`application/vnd.faf+yaml`).
-- ``FAFMemory``  — live voice memory. Reads/writes a soul on MCPaaS
-  via the MCP protocol. Loads `.fafm` (`application/vnd.fafm+yaml`
-  planned).
+  Loads ``.faf`` (``application/vnd.faf+yaml``, IANA-registered).
+- ``FAFMemory``  — VML reference implementation. Reads/writes a soul
+  on MCPaaS via the MCP protocol. ``.fafm``
+  (``application/vnd.fafm+yaml``) is the planned IANA media type for
+  the wire format.
 - ``Scratchpad`` — in-session ephemeral key/value store, composed
   by ``FAFMemory``.
 
