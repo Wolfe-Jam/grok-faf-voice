@@ -5,7 +5,7 @@ description = "grok-faf-voice | VML • Voice Memory Layer for Grok • Persiste
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Wolfe-Jam" }]
+authors = [{ name = "wolfejam", email = "team@faf.one" }]
 keywords = [
     # Brand / category we define
     "voice-memory-layer",
