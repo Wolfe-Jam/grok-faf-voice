@@ -346,6 +346,14 @@ Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI
 
 ---
 
+## Contributing
+
+Five-minute onboarding: [ONBOARDING.md](ONBOARDING.md). Test regime
+spec: [WJTTC.md](WJTTC.md). PRs welcome — bug fixes ship with a
+regression test, WJTTC sweep must be green.
+
+---
+
 ## License
 
 **Don't copy FAF brand. Do your own.**
