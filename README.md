@@ -352,9 +352,9 @@ Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI
 
 ## Contributing
 
-Five-minute onboarding: [ONBOARDING.md](ONBOARDING.md). Test regime
-spec: [WJTTC.md](WJTTC.md). PRs welcome — bug fixes ship with a
-regression test, WJTTC sweep must be green.
+Five-minute setup: [ONBOARDING.md](ONBOARDING.md).
+PR conventions + architecture rules: [CONTRIBUTING.md](CONTRIBUTING.md).
+Test regime spec: [WJTTC.md](WJTTC.md).
 
 ---
 
