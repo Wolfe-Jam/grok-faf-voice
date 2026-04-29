@@ -342,6 +342,8 @@ Companion to [FAF-Voice](https://github.com/Wolfe-Jam/FAF-Voice) — the multi-m
 
 Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI.
 
+[![Star faf-cli](https://img.shields.io/github/stars/Wolfe-Jam/faf-cli?style=social&label=Star%20the%20FAF%20CLI)](https://github.com/Wolfe-Jam/faf-cli) — support the ecosystem this SDK belongs to.
+
 ---
 
 ## License
