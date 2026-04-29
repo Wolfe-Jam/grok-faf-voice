@@ -352,7 +352,8 @@ Built with care for the Grok Voice ecosystem. Not officially affiliated with xAI
 
 ## Contributing
 
-Five-minute setup: [ONBOARDING.md](ONBOARDING.md).
+Polished onboarding page: **[wolfe-jam.github.io/grok-faf-voice/onboarding.html](https://wolfe-jam.github.io/grok-faf-voice/onboarding.html)**
+Five-minute setup (markdown): [ONBOARDING.md](ONBOARDING.md).
 PR conventions + architecture rules: [CONTRIBUTING.md](CONTRIBUTING.md).
 Test regime spec: [WJTTC.md](WJTTC.md).
 
