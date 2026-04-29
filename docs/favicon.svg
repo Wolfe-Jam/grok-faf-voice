@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- grok-faf-voice / VML favicon — recolored from RadioFAF icon
+       Brand story: gold soul-state at center, indigo memory waves
+       radiating outward across sessions, devices, model switches.
+       Voice palette: indigo #818CF8 + gold #FCD34D on pure black. -->
+  <rect rx="20" width="100" height="100" fill="#000000"/>
+  <circle cx="50" cy="82" r="8" fill="#FCD34D"/>
+  <path d="M30 62 a28 28 0 0 1 40 0" stroke="#818CF8" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <path d="M18 45 a45 45 0 0 1 64 0" stroke="#818CF8" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <path d="M6 28 a62 62 0 0 1 88 0" stroke="#818CF8" stroke-width="8" fill="none" stroke-linecap="round"/>
+</svg>
