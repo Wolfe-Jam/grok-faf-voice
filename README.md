@@ -1,11 +1,14 @@
 # grok-faf-voice
 
-[![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg)](https://pypi.org/project/grok-faf-voice/)
-[![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg)](https://pypi.org/project/grok-faf-voice/)
-[![License](https://img.shields.io/pypi/l/grok-faf-voice.svg)](https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg?color=00D4D4)](https://pypi.org/project/grok-faf-voice/)
+[![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg?color=00D4D4)](https://pypi.org/project/grok-faf-voice/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/Wolfe-Jam/grok-faf-voice/ci.yml?branch=main&label=tests)](https://github.com/Wolfe-Jam/grok-faf-voice/actions/workflows/ci.yml)
 
 **The Voice Memory Layer (VML) for Grok Voice. LiveKit enabled.**
+
+`.fafm 🐘🎙️` — the voice variant of the `.faf 🐘` family.
+Wire format: `application/vnd.fafm+yaml` (IANA registration planned).
 
 Voice agents forget. This fixes it. One import. Done.
 
