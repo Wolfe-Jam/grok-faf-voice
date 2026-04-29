@@ -5,6 +5,20 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-04-29 — auto-merge session-reuse fix
+
+### Fixed
+
+- **Auto-merge no-op on session 2+ when `FAFMemory` is reused across
+  sessions.** The `_merge_completed_this_session` guard flag was set
+  on every `merge()` but never reset, so the README pattern
+  (module-scope `mem` + per-session `entrypoint`) caused every session
+  after the first to skip its shutdown merge. Fix: `attach_auto_merge`
+  now resets `_merge_completed_this_session` and `_merge_in_progress`
+  to `False` at registration time, so each session's shutdown callback
+  starts from a clean slate. Regression test added
+  (`test_attach_auto_merge_resets_flags_for_session_reuse`).
+
 ## [0.1.0] — 2026-04-27 — first public release
 
 The complete first-public surface for **persistent memory in Grok
@@ -150,4 +164,5 @@ the `FAFContext` + `FAFMemory` siblings, CI foundations, the
 
 ---
 
+[0.1.1]: https://github.com/Wolfe-Jam/grok-faf-voice/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Wolfe-Jam/grok-faf-voice/releases/tag/v0.1.0

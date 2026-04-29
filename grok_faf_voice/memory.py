@@ -598,7 +598,14 @@ class FAFMemory:
         Every attempt is recorded in the configured ledger (success and
         failure paths). Failures inside the merge are caught and logged
         — never re-raised, so shutdown completes cleanly.
+
+        Resets the per-session merge guard flags so reusing one
+        ``FAFMemory`` across multiple sessions (the README pattern —
+        module-scope ``mem`` + per-session ``entrypoint``) doesn't
+        cause session 2+ to no-op when the prior session already merged.
         """
+        self._merge_completed_this_session = False
+        self._merge_in_progress = False
 
         async def _merge_on_shutdown() -> None:
             async with self._lock:

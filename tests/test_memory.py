@@ -1145,22 +1145,81 @@ async def test_shutdown_callback_logs_partial_or_failed_on_exception():
 async def test_shutdown_callback_no_ops_when_merge_already_completed():
     """If merge_now (or any explicit merge) already ran this session,
     the shutdown callback no-ops and writes nothing to the ledger.
+
+    Real-life ordering: attach_auto_merge runs at session start, then
+    merge_now fires mid-session (sets the flag), then shutdown fires.
     """
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
     mem = FAFMemory("grok", token="t", ledger=ledger)
-    mem._merge_completed_this_session = True  # simulate prior merge_now
 
     session = _FakeAgentSession()
     ctx = _FakeJobContext()
 
     mem.attach_auto_merge(session, ctx)
+    mem._merge_completed_this_session = True  # simulate mid-session merge_now
     callback = ctx.shutdown_callbacks[0]
 
     await callback()
 
     assert ledger.attempts == []
+
+
+async def test_attach_auto_merge_resets_flags_for_session_reuse():
+    """Reusing one FAFMemory across two sessions (the README pattern —
+    module-scope mem + per-session entrypoint) must NOT cause session 2's
+    auto-merge to no-op because session 1 already merged.
+
+    Regression for: _merge_completed_this_session leaking across sessions.
+    """
+    from grok_faf_voice import InMemoryVoiceSessionLedger
+
+    ledger = InMemoryVoiceSessionLedger()
+    mem = FAFMemory("grok", token="t", ledger=ledger)
+
+    class _MockMcpResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class _MockMcpClient:
+        def __init__(self, url):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            return _MockMcpResult()
+
+    # Session 1
+    mem.scratchpad.update("a", "alpha")
+    session1 = _FakeAgentSession(session_id="sess-1")
+    ctx1 = _FakeJobContext()
+    mem.attach_auto_merge(session1, ctx1, strategy="heuristic")
+    with patch("grok_faf_voice.memory.Client", _MockMcpClient):
+        await ctx1.shutdown_callbacks[0]()
+    assert mem._merge_completed_this_session is True  # flag armed
+
+    # Session 2 — same mem object, fresh attach_auto_merge.
+    # The fix resets the flag at registration so this session's
+    # callback runs the merge instead of no-opping.
+    mem.scratchpad.update("b", "beta")
+    session2 = _FakeAgentSession(session_id="sess-2")
+    ctx2 = _FakeJobContext()
+    mem.attach_auto_merge(session2, ctx2, strategy="heuristic")
+    assert mem._merge_completed_this_session is False  # reset on re-register
+    with patch("grok_faf_voice.memory.Client", _MockMcpClient):
+        await ctx2.shutdown_callbacks[0]()
+
+    assert len(ledger.attempts) == 2
+    assert ledger.attempts[0]["session_id"] == "sess-1"
+    assert ledger.attempts[0]["status"] == "completed"
+    assert ledger.attempts[1]["session_id"] == "sess-2"
+    assert ledger.attempts[1]["status"] == "completed"
 
 
 async def test_shutdown_callback_does_not_propagate_unexpected_errors():
