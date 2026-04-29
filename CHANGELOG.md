@@ -5,7 +5,7 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] — 2026-04-29 — auto-merge session-reuse fix
+## [0.1.1] — 2026-04-29 — auto-merge session-reuse fix + WJTTC v1
 
 ### Fixed
 
@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `False` at registration time, so each session's shutdown callback
   starts from a clean slate. Regression test added
   (`test_attach_auto_merge_resets_flags_for_session_reuse`).
+
+### Added
+
+- **WJTTC test regime (v1)** — F1-inspired four-tier early-warning
+  system against fast-moving upstreams (xAI Voice, LiveKit Agents,
+  MCPaaS, fastmcp). 🛑 BRAKE (gating), ⚙️ ENGINE (correctness +
+  upstream-contract pins), 🌀 AERO (polish), 🛞 TYRES (live probes,
+  costs $, manual/cron). Single runnable: `./scripts/wjttc.sh
+  [--tyres | --tyres-only]`. 15 contract-pin tests in
+  `tests/test_wjttc_contracts.py` ride the standard pytest run, so
+  upstream drift (LiveKit symbol renames, xAI strict-mode regressions,
+  MCPaaS endpoint changes) goes red before users hit it. Auto-loads
+  `.env`. Skip ≠ fail. Spec lives in `WJTTC.md`. Three artifacts ship
+  with the package (the contract tests via sdist; the doc and shell
+  script are dev-only, not in the wheel).
 
 ## [0.1.0] — 2026-04-27 — first public release
 
