@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Get started — grok-faf-voice</title>
+<meta name="description" content="Five-minute setup for grok-faf-voice — the Voice Memory Layer (VML) for Grok Voice. LiveKit enabled.">
+<style>
+  :root {
+    --bg: #000000;
+    --fg: #F5F0E8;
+    --dim: #888;
+    --faint: #444;
+    --indigo: #6366F1;
+    --indigo-deep: #4338CA;
+    --gold: #FCD34D;
+    --border: #222;
+    --card: #141414;
+    --tile: #0F0F0F;
+    --highlight: rgba(99, 102, 241, 0.10);
+    --gold-tint: rgba(252, 211, 77, 0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); margin: 0; padding: 0; }
+  body {
+    color: var(--fg);
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 3rem 2rem 5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1, h2, h3 { color: var(--indigo); font-weight: 600; letter-spacing: 0.02em; margin-top: 3rem; }
+  h1 { font-size: 2rem; margin-top: 0; }
+  h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  h3 { font-size: 1rem; color: var(--fg); margin-top: 1.5rem; }
+  p { margin: 0.6rem 0; }
+  a { color: var(--indigo); text-decoration: none; border-bottom: 1px dotted var(--indigo); }
+  a:hover { color: var(--gold); border-bottom-color: var(--gold); }
+
+  code {
+    background: var(--card);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--gold);
+    font-size: 13px;
+  }
+  pre {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--indigo);
+    border-radius: 5px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0.8rem 0;
+  }
+  pre code { background: transparent; padding: 0; color: var(--fg); }
+
+  .lead { color: var(--dim); margin-bottom: 0.3rem; font-size: 15px; }
+  .meta { color: var(--faint); font-size: 12px; }
+  .mark { color: var(--gold); font-weight: 600; }
+
+  /* Hero */
+  .hero {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2rem;
+    margin-bottom: 1rem;
+  }
+  .hero .family {
+    color: var(--gold);
+    font-size: 1.1rem;
+    margin: 0.6rem 0;
+  }
+  .hero .promise {
+    color: var(--fg);
+    font-size: 1rem;
+    margin-top: 1rem;
+  }
+
+  /* Requirements grid */
+  .reqs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.8rem;
+    margin: 1rem 0;
+  }
+  .req {
+    background: var(--tile);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  .req .key {
+    color: var(--indigo);
+    font-weight: 600;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .req .src {
+    color: var(--dim);
+    font-size: 12px;
+    margin-top: 0.5rem;
+  }
+  .req .src a { color: var(--dim); }
+
+  /* Namepoint callout */
+  .namepoint {
+    background: var(--highlight);
+    border: 1px solid var(--indigo);
+    border-radius: 6px;
+    padding: 1.3rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .namepoint h3 { margin-top: 0; color: var(--indigo); }
+  .namepoint .examples {
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0.3rem 0;
+  }
+  .namepoint .note { color: var(--dim); font-size: 12px; margin-top: 0.5rem; }
+
+  /* Coming-soon Voice key */
+  .coming-soon {
+    background: var(--gold-tint);
+    border: 1px dashed var(--gold);
+    border-radius: 6px;
+    padding: 1.2rem 1.4rem;
+    margin: 1.5rem 0;
+  }
+  .coming-soon h3 { margin-top: 0; color: var(--gold); }
+  .coming-soon .badge-soon {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--bg);
+    font-weight: 700;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  /* Step cards */
+  .steps { margin: 1.5rem 0 2rem; }
+  .step {
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .step:last-child { border-bottom: 1px solid var(--border); }
+  .step .num {
+    color: var(--gold);
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1;
+    text-align: right;
+  }
+  .step .body h3 { margin-top: 0; color: var(--indigo); font-size: 1rem; }
+  .step .body p { margin: 0.4rem 0; }
+  .step .body pre { margin: 0.6rem 0; }
+
+  /* What works / what's coming */
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .pair .col {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+  }
+  .pair .col.now { border-left: 3px solid var(--indigo); }
+  .pair .col.next { border-left: 3px solid var(--gold); }
+  .pair .col h3 { margin-top: 0; }
+  .pair .col.now h3 { color: var(--indigo); }
+  .pair .col.next h3 { color: var(--gold); }
+  .pair .col ul { padding-left: 1.2rem; margin: 0.5rem 0; }
+  .pair .col li { margin: 0.3rem 0; font-size: 13px; }
+
+  /* Beyond section */
+  .beyond {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.8rem;
+    margin: 1rem 0;
+  }
+  .beyond .link-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+    transition: border-color 0.15s;
+  }
+  .beyond .link-card:hover { border-color: var(--indigo); }
+  .beyond .link-card .title { color: var(--indigo); font-weight: 600; font-size: 14px; }
+  .beyond .link-card .desc { color: var(--dim); font-size: 12px; margin-top: 0.3rem; }
+
+  /* Footer */
+  .footer {
+    color: var(--faint);
+    font-size: 11px;
+    text-align: center;
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .reqs { grid-template-columns: 1fr 1fr; }
+    .pair { grid-template-columns: 1fr; }
+    .beyond { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 50px 1fr; gap: 1rem; }
+    .step .num { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Get started — grok-faf-voice</h1>
+  <p class="lead">The Voice Memory Layer (VML) for Grok Voice. LiveKit enabled.</p>
+  <p class="family"><code>.fafm 🐘🎙️</code> — the voice variant of the <code>.faf 🐘</code> family.</p>
+  <p class="promise">Five minutes from a fresh terminal to a voice agent that remembers across sessions.</p>
+  <p class="meta">v0.1.2 · Python 3.10+ · MIT</p>
+</div>
+
+<h2>System requirements</h2>
+<p class="lead">Four keys. Get them once, paste into <code>.env</code>.</p>
+
+<div class="reqs">
+  <div class="req">
+    <div class="key">XAI_API_KEY</div>
+    <div class="src">from <a href="https://console.x.ai" target="_blank">console.x.ai</a></div>
+  </div>
+  <div class="req">
+    <div class="key">LIVEKIT_URL</div>
+    <div class="src">from <a href="https://cloud.livekit.io" target="_blank">cloud.livekit.io</a></div>
+  </div>
+  <div class="req">
+    <div class="key">LIVEKIT_API_KEY</div>
+    <div class="src">same LiveKit project dashboard</div>
+  </div>
+  <div class="req">
+    <div class="key">LIVEKIT_API_SECRET</div>
+    <div class="src">same LiveKit project dashboard</div>
+  </div>
+</div>
+
+<div class="namepoint">
+  <h3>+ One namepoint <span class="meta">your soul address</span></h3>
+  <p>Where your agent's memories live. <strong class="mark">Free tier</strong>: <code>name + 2 digits</code>:</p>
+  <p class="examples">james77 · amy123 · atlanta96</p>
+  <p>Premium tiers (paid): 3-letter $9, 4+ letters $2. Claim yours at <a href="https://mcpaas.live" target="_blank">mcpaas.live</a>, then set <code>FAF_SOUL=&lt;your-namepoint&gt;</code> in <code>.env</code>.</p>
+  <p class="note">The namepoint is your <em>etch destination</em> — not a token. Reads against public souls (<code>grok</code>, <code>faf</code>, <code>nelly</code>, <code>spacex</code>) work today without any auth.</p>
+</div>
+
+<div class="coming-soon">
+  <h3>Voice API key <span class="badge-soon">COMING SOON</span></h3>
+  <p>A free Voice API key flow is launching on <a href="https://mcpaas.live" target="_blank">mcpaas.live</a>. Once shipped, set <code>MCPAAS_API_KEY=&lt;your-voice-api-key&gt;</code> in <code>.env</code> and your namepoint becomes write-capable.</p>
+  <p class="note">Until then, FAFMemory is read-only against public souls — useful for exercising the recall path. Don't use the paid <code>/slash/dashboard</code> tokens for Voice writes; that's the Slash API gateway product, separate path.</p>
+</div>
+
+<h2>The four steps</h2>
+
+<div class="steps">
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Clone + venv</h3>
+      <pre><code>git clone https://github.com/Wolfe-Jam/grok-faf-voice
+cd grok-faf-voice
+python3 -m venv .venv && source .venv/bin/activate</code></pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Install + configure</h3>
+      <pre><code>pip install -e ".[dev]"
+cp .env.example .env       # paste your 4 keys + namepoint</code></pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h3>Verify with WJTTC</h3>
+      <pre><code>./scripts/wjttc.sh             # BRAKE + ENGINE + AERO (default)
+./scripts/wjttc.sh --tyres     # + live probes against xAI + MCPaaS</code></pre>
+      <p>Green across every tier = your setup is healthy. Red on a tier tells you which layer broke. <a href="https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/WJTTC.md" target="_blank">WJTTC.md</a> explains what each tier guards against.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div class="body">
+      <h3>Talk to your agent</h3>
+      <pre><code>python examples/hello_grok_with_etch.py console</code></pre>
+      <p>In the voice loop, try:</p>
+      <pre><code>"Etch this — first contact verified."</code></pre>
+      <p>Close the session. Restart. Then ask:</p>
+      <pre><code>"What do you remember?"</code></pre>
+      <p>The agent recalls — that's the cross-session loop, persisted to your namepoint via MCPaaS.</p>
+    </div>
+  </div>
+
+</div>
+
+<h2>Today vs. coming releases</h2>
+
+<div class="pair">
+  <div class="col now">
+    <h3>Today (v0.1.2)</h3>
+    <ul>
+      <li>xAI realtime — 5 voices: Ara · Eve · Leo · Rex · Sal</li>
+      <li>FAFContext + FAFMemory + Scratchpad + ContextBus + Ledger</li>
+      <li>Smart Merge Engine (heuristic / grok-decides / merge_all)</li>
+      <li>Cross-session resumption with idempotent retry</li>
+      <li>4-tier WJTTC test regime</li>
+      <li>Read-only against public souls (Voice API key launching)</li>
+    </ul>
+  </div>
+  <div class="col next">
+    <h3>Roadmap</h3>
+    <ul>
+      <li>v0.2 — VoiceAgent composer + Identity (10-line shape)</li>
+      <li>v0.3 — VoiceProvider Protocol extraction</li>
+      <li>v0.4 — ElevenLabs / Hume / custom voice cloning</li>
+      <li>v0.5 — Consolidator strategies as plug-ins</li>
+      <li>Free Voice API key page on mcpaas.live</li>
+    </ul>
+    <p class="note" style="color: var(--dim); font-size: 12px;">Voice swappable; memory permanent.</p>
+  </div>
+</div>
+
+<h2>Beyond onboarding</h2>
+
+<div class="beyond">
+  <a class="link-card" href="https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/CONTRIBUTING.md" target="_blank">
+    <div class="title">CONTRIBUTING.md →</div>
+    <div class="desc">PR conventions, code style, architecture rules, contract pin discipline</div>
+  </a>
+  <a class="link-card" href="https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/WJTTC.md" target="_blank">
+    <div class="title">WJTTC.md →</div>
+    <div class="desc">F1-inspired four-tier test regime spec — BRAKE / ENGINE / AERO / TYRES</div>
+  </a>
+  <a class="link-card" href="https://github.com/Wolfe-Jam/grok-faf-voice" target="_blank">
+    <div class="title">README →</div>
+    <div class="desc">Architecture, primitives, Tool Latency Budget, Context Bus event vocabulary</div>
+  </a>
+</div>
+
+<div class="footer">
+  grok-faf-voice — application/vnd.fafm+yaml planned · MIT licensed · made with care for the Grok Voice ecosystem<br>
+  github.com/Wolfe-Jam/grok-faf-voice · pypi.org/project/grok-faf-voice
+</div>
+
+</body>
+</html>
