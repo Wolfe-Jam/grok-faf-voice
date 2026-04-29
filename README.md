@@ -1,7 +1,7 @@
 # grok-faf-voice
 
-[![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg?color=00D4D4)](https://pypi.org/project/grok-faf-voice/)
-[![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg?color=00D4D4)](https://pypi.org/project/grok-faf-voice/)
+[![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg?color=6366F1)](https://pypi.org/project/grok-faf-voice/)
+[![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg?color=6366F1)](https://pypi.org/project/grok-faf-voice/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/Wolfe-Jam/grok-faf-voice/ci.yml?branch=main&label=tests)](https://github.com/Wolfe-Jam/grok-faf-voice/actions/workflows/ci.yml)
 
@@ -10,12 +10,16 @@
 `.fafm 🐘🎙️` — the voice variant of the `.faf 🐘` family.
 Wire format: `application/vnd.fafm+yaml` (IANA registration planned).
 
-Voice agents forget. This fixes it. One import. Done.
+Voice agents forget. VML fixes it. One import. Done.
 
 Persistent memory across sessions, devices, and model switches. Grok
 calls it **eternal soul state.** This SDK is the reference
 implementation of VML — the persistence layer for what your agent
 remembers.
+
+Leading with xAI today (5 voices: Ara · Eve · Leo · Rex · Sal).
+Adding ElevenLabs, Hume, and custom voice cloning in upcoming
+releases — voice swappable, memory permanent.
 
 ```bash
 pip install grok-faf-voice
@@ -25,7 +29,7 @@ pip install grok-faf-voice
 from grok_faf_voice import FAFContext, FAFMemory
 
 faf = FAFContext("project.faf")              # static project DNA
-mem = FAFMemory("grok", token="...")         # live voice memory
+mem = FAFMemory("grok", api_key="...")       # live voice memory
 ```
 
 ---
