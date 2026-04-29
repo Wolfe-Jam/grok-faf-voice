@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **WJTTC test regime (v1)** — F1-inspired four-tier early-warning
   system against fast-moving upstreams (xAI Voice, LiveKit Agents,
-  MCPaaS, fastmcp). 🛑 BRAKE (gating), ⚙️ ENGINE (correctness +
+  MCPaaS, fastmcp). 🛡️ BRAKE (gating), ⚙️ ENGINE (correctness +
   upstream-contract pins), 🌀 AERO (polish), 🛞 TYRES (live probes,
   costs $, manual/cron). Single runnable: `./scripts/wjttc.sh
   [--tyres | --tyres-only]`. 15 contract-pin tests in

@@ -106,11 +106,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# 🛑 BRAKE
+# 🛡️ BRAKE
 # ---------------------------------------------------------------------------
 
 if (( run_brake )); then
-    section "🛑 BRAKE — gating checks"
+    section "🛡️ BRAKE — gating checks"
 
     # Full pytest suite (excluding network-marker tests). ENGINE
     # contract tests live under tests/test_wjttc_contracts.py and
@@ -327,7 +327,7 @@ fi
 section "RESULT"
 
 (( run_brake )) && {
-    if (( BRAKE_FAIL )); then fail "🛑 BRAKE failed"; else ok "🛑 BRAKE passed"; fi
+    if (( BRAKE_FAIL )); then fail "🛡️ BRAKE failed"; else ok "🛡️ BRAKE passed"; fi
 }
 (( run_engine )) && {
     if (( ENGINE_FAIL )); then fail "⚙️  ENGINE failed"; else ok "⚙️  ENGINE passed"; fi

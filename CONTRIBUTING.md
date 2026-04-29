@@ -21,7 +21,7 @@ If it ends with **🏎️ Championship pace.** you're good. Any 🚨 line means
 fix before pushing — see [WJTTC.md](WJTTC.md) for what each tier
 guards against.
 
-PRs that don't pass 🛑 BRAKE will not be reviewed.
+PRs that don't pass 🛡️ BRAKE will not be reviewed.
 
 ---
 
@@ -31,7 +31,7 @@ PRs that don't pass 🛑 BRAKE will not be reviewed.
 |---|---|
 | Bug fix | A regression test that fails on the bug, passes after the fix. (See `test_attach_auto_merge_resets_flags_for_session_reuse` for the v0.1.1 reference shape — the test came **with** the fix, not after.) |
 | New feature | Tests for the new surface. ENGINE-tier contract pin if it touches an upstream API (LiveKit, xAI, MCPaaS, fastmcp, Pydantic). |
-| Doc-only | No tests required. WJTTC `🛑 BRAKE` still gates (lint + build + version sync). |
+| Doc-only | No tests required. WJTTC `🛡️ BRAKE` still gates (lint + build + version sync). |
 | Refactor | Existing tests must pass unchanged. Coverage on `memory.py` must stay ≥ 90%. |
 
 `ruff check grok_faf_voice tests` must be clean. The ruff config in

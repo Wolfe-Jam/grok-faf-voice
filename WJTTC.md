@@ -14,14 +14,14 @@ breakage shows up here, in our test suite, **before** a user hits it.
 
 | Tier | Cost | Trigger | Job |
 |------|------|---------|-----|
-| 🛑 **BRAKE** | ~10s, free | every commit / PR | Hard gates. If a brake fails, the wheel does not ship. |
+| 🛡️ **BRAKE** | ~10s, free | every commit / PR | Hard gates. If a brake fails, the wheel does not ship. |
 | ⚙️ **ENGINE** | ~5s, free | every commit / PR | Correctness + upstream-contract pins. Catches drift before users do. |
 | 🌀 **AERO** | ~2s, free | every commit / PR | Polish. Wheel inventory, no junk in dist, version sync. |
 | 🛞 **TYRES** | ~30–60s, costs $ + creds | weekly cron / pre-release / manual | Live probes against xAI + MCPaaS. The early-warning heartbeat. |
 
 ---
 
-## 🛑 BRAKE — gating checks
+## 🛡️ BRAKE — gating checks
 
 Hard requirements before a release. Run on every commit. Fail = stop.
 
