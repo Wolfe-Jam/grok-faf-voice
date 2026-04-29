@@ -7,19 +7,21 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Wolfe-Jam" }]
 keywords = [
-    "grok",
-    "xai",
-    "voice",
-    "livekit",
-    "memory",
-    "persistent-memory",
+    # Brand / category we define
     "voice-memory-layer",
     "vml",
-    "voice-agent",
-    "mcp",
-    "faf",
     "fafm",
-    "realtime",
+    # Platforms
+    "grok",
+    "xai",
+    "livekit",
+    # Capability category
+    "persistent-memory",
+    "voice-agent",
+    # Differentiator
+    "paralinguistic",
+    # Protocol
+    "mcp",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
