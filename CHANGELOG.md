@@ -5,6 +5,56 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-04-29 — Voice Memory Layer (VML) brand + onboarding
+
+### Added
+
+- **Voice Memory Layer (VML)** — coined as the FAF-family term for
+  the voice-memory persistence category. File extension is `.fafm`
+  (not `.vml` — keeps the FAF family cohesive: `.faf` / `.fafb` /
+  `.fafm`). Media type `application/vnd.fafm+yaml` is planned for
+  IANA registration. This SDK is positioned as the reference
+  implementation of VML.
+- **`.fafm 🐘🎙️` family mark** — voice variant of the `.faf 🐘`
+  family mark. Microphone modifier qualifies the voice surface
+  (mirrors Grok's earned ⚡️ pattern in `grok-faf-mcp`).
+- **`ONBOARDING.md`** — five-minute one-pager. System requirements
+  (4 keys + 1 namepoint) preamble, then four numbered steps
+  (clone+venv → install+configure → verify with WJTTC → talk to
+  your agent). PR conventions footer.
+- **README polish (Bronze → Silver)**:
+  - Badges row (PyPI, Python, License, Tests) — FAF cyan (#00D4D4)
+    on metadata badges, MIT-yellow on License, dynamic on Tests.
+  - One-line problem statement: "Voice agents forget. This fixes it."
+  - "Three files, three audiences" reader-tree (`pyproject.toml` /
+    `project.faf` / `README.md` / `grok_faf_voice/`).
+  - "Two layers, one ecosystem" diagram pairing `.faf` (Foundational
+    Context Layer) with `.fafm` (Voice Memory Layer / VML).
+  - Quickstart split into Minimal (10-line) + Full integration.
+  - `Contributing` section linking ONBOARDING.md + WJTTC.md.
+  - Ecosystem star link (points at `Wolfe-Jam/faf-cli` per the
+    star-concentration strategy; sits in Lineage footer).
+
+### Changed
+
+- **`pyproject.toml` description** shifted to sibling's pipe-bullet
+  rhythm: `grok-faf-voice | VML • Voice Memory Layer for Grok •
+  Persistent across sessions, devices, models • LiveKit-enabled`.
+- **Keywords trimmed** 13 → 10 high-signal terms across 5 question-
+  types: brand (`voice-memory-layer`, `vml`, `fafm`), platforms
+  (`grok`, `xai`, `livekit`), capability (`persistent-memory`,
+  `voice-agent`), differentiator (`paralinguistic`), protocol
+  (`mcp`). Dropped: `voice`, `memory`, `realtime` (too generic),
+  `faf` (covered by `fafm` + package name).
+- **License section** brand line promoted above MIT — "Don't copy
+  FAF brand. Do your own." now reads first.
+- **`__init__.py` module docstring** updated to position the SDK as
+  the VML reference implementation. `pip show` and IDE hover-help
+  carry the term.
+- **Stale `0.0.12` version reference** removed from the
+  "What it sounds like" dialog example. Narrative content is now
+  timeless.
+
 ## [0.1.1] — 2026-04-29 — auto-merge session-reuse fix + WJTTC v1
 
 ### Fixed
@@ -179,5 +229,6 @@ the `FAFContext` + `FAFMemory` siblings, CI foundations, the
 
 ---
 
+[0.1.2]: https://github.com/Wolfe-Jam/grok-faf-voice/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Wolfe-Jam/grok-faf-voice/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Wolfe-Jam/grok-faf-voice/releases/tag/v0.1.0

@@ -147,6 +147,7 @@ otherwise. TYRES skips count as 0 (skip ≠ fail).
 
 | Version | Date | BRAKE | ENGINE | AERO | TYRES | Notes |
 |---------|------|-------|--------|------|-------|-------|
+| v0.1.2 | 2026-04-29 | ✅ | ✅ | ✅ | ✅ | VML brand + sibling alignment + onboarding. TYRES verified live (xAI strict-mode + MCPaaS public-soul + LiveKit pip resolution). |
 | v0.1.1 | 2026-04-29 | ✅ | ✅ | ✅ | — | Auto-merge session-reuse fix. WJTTC v1 introduced. TYRES not yet wired. |
 
 ---
