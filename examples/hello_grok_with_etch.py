@@ -6,7 +6,7 @@ voice memories to a persistent soul.
 Run::
 
     pip install -e .
-    export MCPAAS_TOKEN=your-token
+    export MCPAAS_API_KEY=your-voice-api-key
     python examples/hello_grok_with_etch.py console
 
 In the console session, try::
@@ -45,7 +45,7 @@ faf = FAFContext("project.faf")
 # lasts the process lifetime (swap for a persistent impl in production).
 mem = FAFMemory(
     soul=os.environ.get("FAF_SOUL", "grok"),
-    token=os.environ.get("MCPAAS_TOKEN"),
+    api_key=os.environ.get("MCPAAS_API_KEY"),
     ledger=InMemoryVoiceSessionLedger(),
 )
 

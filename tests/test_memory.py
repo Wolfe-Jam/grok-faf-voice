@@ -27,25 +27,25 @@ def test_instantiation():
     assert mem.soul == "grok"
 
 
-def test_token_from_env():
-    """FAFMemory reads MCPAAS_TOKEN from env when no token arg given."""
-    with patch.dict(os.environ, {"MCPAAS_TOKEN": "env-token-123"}):
+def test_api_key_from_env():
+    """FAFMemory reads MCPAAS_API_KEY from env when no api_key arg given."""
+    with patch.dict(os.environ, {"MCPAAS_API_KEY": "env-key-123"}):
         mem = FAFMemory("grok")
-        assert mem._token == "env-token-123"
+        assert mem._api_key == "env-key-123"
 
 
-def test_token_constructor_overrides_env():
-    """Explicit token arg wins over MCPAAS_TOKEN env var."""
-    with patch.dict(os.environ, {"MCPAAS_TOKEN": "env-value"}):
-        mem = FAFMemory("grok", token="explicit-value")
-        assert mem._token == "explicit-value"
+def test_api_key_constructor_overrides_env():
+    """Explicit api_key arg wins over MCPAAS_API_KEY env var."""
+    with patch.dict(os.environ, {"MCPAAS_API_KEY": "env-value"}):
+        mem = FAFMemory("grok", api_key="explicit-value")
+        assert mem._api_key == "explicit-value"
 
 
-def test_token_none_when_no_arg_or_env():
-    """No token arg + no env = None (read still works for public souls)."""
+def test_api_key_none_when_no_arg_or_env():
+    """No api_key arg + no env = None (read still works for public souls)."""
     with patch.dict(os.environ, {}, clear=True):
         mem = FAFMemory("grok")
-        assert mem._token is None
+        assert mem._api_key is None
 
 
 def test_scratchpad_composed():
@@ -83,15 +83,15 @@ async def test_etch_get_round_trip():
     """Live MCPaaS round-trip: write a tagged note, read it back.
 
     Writes to the soul named in ``FAF_TEST_SOUL`` (default: ``grok``).
-    Token must be in ``MCPAAS_TOKEN`` env — test is skipped via
+    API key must be in ``MCPAAS_API_KEY`` env — test is skipped via
     ``--run-network`` opt-in so this only runs when a dev explicitly
     asks for live MCPaaS round-trips.
     """
-    token = os.environ.get("MCPAAS_TOKEN")
-    if not token:
-        pytest.skip("MCPAAS_TOKEN not set — required for network tests")
+    api_key = os.environ.get("MCPAAS_API_KEY")
+    if not api_key:
+        pytest.skip("MCPAAS_API_KEY not set — required for network tests")
     soul = os.environ.get("FAF_TEST_SOUL", "grok")
-    mem = FAFMemory(soul, token=token)
+    mem = FAFMemory(soul, api_key=api_key)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     marker = f"pytest-roundtrip-{timestamp}"
@@ -110,7 +110,7 @@ async def test_etch_get_round_trip():
 
 async def test_etch_payload_shape_mocked():
     """etch() builds the correct write_soul payload (mocked client)."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
 
     captured: dict = {}
 
@@ -141,7 +141,9 @@ async def test_etch_payload_shape_mocked():
     assert captured["args"]["entry"] == "hello"
     assert captured["args"]["type"] == "note"
     assert captured["args"]["tags"] == ["a", "b"]
-    assert captured["args"]["token"] == "test-token"
+    # Wire field is still `token` (MCPaaS server-side contract);
+    # SDK exposes it as api_key but passes through the legacy field.
+    assert captured["args"]["token"] == "test-api-key"
     assert "Note added" in result
 
 
@@ -178,8 +180,8 @@ async def test_get_payload_shape_mocked():
     assert result == "soul body here"
 
 
-async def test_etch_raises_auth_error_when_no_token():
-    """Without a token, etch() raises FAFAuthRequiredError with the
+async def test_etch_raises_auth_error_when_no_api_key():
+    """Without an API key, etch() raises FAFAuthRequiredError with the
     friendly 'coming soon' guidance. Does not attempt to write.
     """
     from grok_faf_voice import FAFAuthRequiredError
@@ -192,18 +194,18 @@ async def test_etch_raises_auth_error_when_no_token():
         class TripwireClient:
             def __init__(self, url):
                 raise AssertionError(
-                    "Client should not be constructed when no token"
+                    "Client should not be constructed when no API key"
                 )
 
         with patch("grok_faf_voice.memory.Client", TripwireClient):
             with pytest.raises(FAFAuthRequiredError) as exc_info:
                 await mem.etch("hello")
 
-        # The error message must guide the dev to the Voice key flow.
-        assert "Voice key" in str(exc_info.value)
+        # The error message must guide the dev to the Voice API key flow.
+        assert "Voice API key" in str(exc_info.value)
 
 
-async def test_etch_tool_returns_friendly_message_when_no_token():
+async def test_etch_tool_returns_friendly_message_when_no_api_key():
     """The @function_tool wrapper should catch FAFAuthRequiredError
     and return the friendly text — never a Python traceback to the
     realtime model.
@@ -219,7 +221,7 @@ async def test_etch_tool_returns_friendly_message_when_no_token():
         callable_fn = getattr(tool, "__wrapped__", None) or tool.info.callable
         result = await callable_fn(None, "hello")
 
-        assert "Voice key" in result
+        assert "Voice API key" in result
 
 
 async def test_etch_wraps_invalid_soul_tool_error():
@@ -230,7 +232,7 @@ async def test_etch_wraps_invalid_soul_tool_error():
 
     from grok_faf_voice import FAFEtchError
 
-    mem = FAFMemory("madeup-soul-xyz", token="test-token")
+    mem = FAFMemory("madeup-soul-xyz", api_key="test-api-key")
 
     class FakeClient:
         def __init__(self, url):
@@ -264,7 +266,7 @@ async def test_etch_wraps_generic_tool_error():
 
     from grok_faf_voice import FAFEtchError
 
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
 
     class FakeClient:
         def __init__(self, url):
@@ -323,7 +325,7 @@ async def test_etch_paralinguistic_payload_shape():
     type='paralinguistic', tag list includes both 'paralinguistic' and
     the marker_type, entry has the canonical prefix.
     """
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
 
     captured: dict = {}
 
@@ -361,7 +363,7 @@ async def test_etch_paralinguistic_payload_shape():
 
 async def test_etch_paralinguistic_without_context():
     """etch_paralinguistic() works without the optional context arg."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
 
     captured: dict = {}
 
@@ -622,7 +624,7 @@ async def test_recall_for_prompt_custom_header():
 
 async def test_merge_empty_scratchpad_returns_zeros():
     """merge() on an empty scratchpad does no I/O and returns zeros."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     result = await mem.merge()
     assert result["promoted"] == 0
     assert result["discarded"] == 0
@@ -630,7 +632,7 @@ async def test_merge_empty_scratchpad_returns_zeros():
 
 async def test_merge_heuristic_keeps_non_ephemeral():
     """Heuristic strategy: discard 'ephemeral' priority, keep others."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("address", "123 Main St", priority="high")
     mem.scratchpad.update("name", "James", priority="medium")
     mem.scratchpad.update("random_url", "x.com/abc", priority="ephemeral")
@@ -672,7 +674,7 @@ async def test_merge_heuristic_keeps_non_ephemeral():
 
 async def test_merge_promotes_with_smart_tag_in_tags():
     """Entries with a tag get that tag in the etched tag list too."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("addr", "123 Main", tag="contact")
 
     captured: list = []
@@ -704,7 +706,7 @@ async def test_merge_promotes_with_smart_tag_in_tags():
 
 async def test_merge_all_promotes_ephemeral_too():
     """strategy='merge_all' bypasses the priority filter."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("trash", "x", priority="ephemeral")
 
     class FakeResult:
@@ -733,7 +735,7 @@ async def test_merge_all_promotes_ephemeral_too():
 
 async def test_merge_unknown_strategy_raises():
     """Bad strategy name raises ValueError immediately."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("k", "v")
     with pytest.raises(ValueError, match="Unknown merge strategy"):
         await mem.merge(strategy="garbage")
@@ -798,7 +800,7 @@ class _FakeMcpClient:
 
 async def test_merge_grok_decides_promote_keep_split():
     """grok-decides strategy: structured-output MergeResult drives split."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("address", "123 Main")
     mem.scratchpad.update("trash", "x.com/abc")
 
@@ -839,7 +841,7 @@ async def test_merge_grok_decides_promote_keep_split():
 
 async def test_merge_grok_decides_treats_merge_into_as_promote():
     """merge_into action collapses to promote until full consolidation lands."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("a", "alpha")
     mem.scratchpad.update("b", "beta")
 
@@ -880,7 +882,7 @@ async def test_merge_grok_decides_treats_merge_into_as_promote():
 
 async def test_merge_grok_decides_keeps_undecided_entries_conservative():
     """Entries the model omits from decisions get conservatively promoted."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("decided", "v1")
     mem.scratchpad.update("forgotten", "v2")
 
@@ -992,7 +994,7 @@ async def test_in_memory_ledger_log_shape():
 
 async def test_merge_sets_completion_flag_and_clears_scratchpad():
     """Successful merge sets _merge_completed_this_session and clears pad."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("k", "v")
 
     class _MockMcpResult:
@@ -1026,7 +1028,7 @@ async def test_merge_sets_completion_flag_and_clears_scratchpad():
 
 async def test_merge_empty_scratchpad_sets_completion_flag():
     """Empty merge still flags completion so shutdown callback no-ops."""
-    mem = FAFMemory("grok", token="test-token")
+    mem = FAFMemory("grok", api_key="test-api-key")
     result = await mem.merge(strategy="heuristic")
     assert mem._merge_completed_this_session is True
     assert result["promoted"] == 0
@@ -1043,7 +1045,7 @@ async def test_attach_auto_merge_registers_shutdown_callback():
     """attach_auto_merge calls agent.add_shutdown_callback exactly once."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
-    mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
+    mem = FAFMemory("grok", api_key="k", ledger=InMemoryVoiceSessionLedger())
     session = _FakeAgentSession()
     ctx = _FakeJobContext()
 
@@ -1059,7 +1061,7 @@ async def test_attach_auto_merge_keeps_session_on_close_for_observability():
     """
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
-    mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
+    mem = FAFMemory("grok", api_key="k", ledger=InMemoryVoiceSessionLedger())
     session = _FakeAgentSession()
     ctx = _FakeJobContext()
 
@@ -1074,7 +1076,7 @@ async def test_shutdown_callback_logs_completed_to_ledger():
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
-    mem = FAFMemory("grok", token="t", ledger=ledger)
+    mem = FAFMemory("grok", api_key="k", ledger=ledger)
     mem.scratchpad.update("k1", "v1", priority="high")
 
     session = _FakeAgentSession(session_id="sess-shutdown-ok")
@@ -1119,7 +1121,7 @@ async def test_shutdown_callback_logs_partial_or_failed_on_exception():
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
-    mem = FAFMemory("grok", token="t", ledger=ledger)
+    mem = FAFMemory("grok", api_key="k", ledger=ledger)
     mem.scratchpad.update("k", "v")
 
     session = _FakeAgentSession(session_id="sess-shutdown-fail")
@@ -1152,7 +1154,7 @@ async def test_shutdown_callback_no_ops_when_merge_already_completed():
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
-    mem = FAFMemory("grok", token="t", ledger=ledger)
+    mem = FAFMemory("grok", api_key="k", ledger=ledger)
 
     session = _FakeAgentSession()
     ctx = _FakeJobContext()
@@ -1176,7 +1178,7 @@ async def test_attach_auto_merge_resets_flags_for_session_reuse():
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
-    mem = FAFMemory("grok", token="t", ledger=ledger)
+    mem = FAFMemory("grok", api_key="k", ledger=ledger)
 
     class _MockMcpResult:
         is_error = False
@@ -1231,7 +1233,7 @@ async def test_shutdown_callback_does_not_propagate_unexpected_errors():
         async def log_merge_attempt(self, **kwargs):
             raise RuntimeError("ledger backend down")
 
-    mem = FAFMemory("grok", token="t", ledger=_BrokenLedger())
+    mem = FAFMemory("grok", api_key="k", ledger=_BrokenLedger())
     session = _FakeAgentSession()
     ctx = _FakeJobContext()
 
@@ -1264,7 +1266,7 @@ async def test_shutdown_callback_handles_session_without_id_attribute():
             return deco
 
     ledger = InMemoryVoiceSessionLedger()
-    mem = FAFMemory("grok", token="t", ledger=ledger)
+    mem = FAFMemory("grok", api_key="k", ledger=ledger)
     ctx = _FakeJobContext()
 
     mem.attach_auto_merge(_SessionNoId(), ctx, strategy="heuristic")
@@ -1282,7 +1284,7 @@ async def test_shutdown_callback_handles_session_without_id_attribute():
 
 async def test_merge_heuristic_returns_all_six_keys():
     """Heuristic strategy returns the full six-key shape."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     result = await mem.merge(strategy="heuristic")
     assert set(result.keys()) == {
         "promoted",
@@ -1296,7 +1298,7 @@ async def test_merge_heuristic_returns_all_six_keys():
 
 async def test_merge_all_returns_all_six_keys():
     """merge_all strategy also returns the full shape with overall_notes=None."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     mem.scratchpad.update("k", "v")
 
     class _MockMcpResult:
@@ -1327,7 +1329,7 @@ async def test_merge_all_returns_all_six_keys():
 
 async def test_merge_grok_decides_populates_overall_notes():
     """grok-decides strategy surfaces MergeResult.overall_notes."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     mem.scratchpad.update("a", "alpha")
 
     content = _build_merge_result(
@@ -1364,7 +1366,7 @@ async def test_merge_now_emits_hold_and_confirmation():
     """make_merge_tool's body calls session.say twice: hold + confirmation."""
     from grok_faf_voice.tools import make_merge_tool
 
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     session = _FakeAgentSession()
 
     async def _fake_merge(*, strategy: str = "heuristic", **_):
@@ -1402,7 +1404,7 @@ async def test_merge_now_uses_grok_decides_strategy():
     """
     from grok_faf_voice.tools import make_merge_tool
 
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     session = _FakeAgentSession()
     captured_strategy: dict = {}
 
@@ -1602,7 +1604,7 @@ async def test_on_session_start_no_op_when_nothing_incomplete():
     """No incomplete merges → on_session_start returns zeros, says nothing."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
-    mem = FAFMemory("grok", token="t", ledger=InMemoryVoiceSessionLedger())
+    mem = FAFMemory("grok", api_key="k", ledger=InMemoryVoiceSessionLedger())
     session = _FakeAgentSession()
 
     summary = await mem.on_session_start(session)
@@ -1630,7 +1632,7 @@ async def test_on_session_start_silent_retry_low_severity():
         retry_count=0,
     )
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     session = _FakeAgentSession(session_id="this-session")
 
     summary = await mem.on_session_start(session)
@@ -1658,7 +1660,7 @@ async def test_on_session_start_high_severity_surfaces_user_message():
         retry_count=2,
     )
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     session = _FakeAgentSession()
 
     summary = await mem.on_session_start(session)
@@ -1681,7 +1683,7 @@ async def test_on_session_start_high_severity_via_failed_entry_count():
         failed_entry_ids=["a", "b", "c", "d", "e", "f"],  # > 5
     )
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     session = _FakeAgentSession()
 
     summary = await mem.on_session_start(session)
@@ -1701,7 +1703,7 @@ async def test_on_session_start_abandons_after_max_retries():
         retry_count=3,  # at the limit
     )
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     session = _FakeAgentSession()
 
     summary = await mem.on_session_start(session)
@@ -1727,7 +1729,7 @@ async def test_on_session_start_logs_failure_when_retry_itself_fails():
         retry_count=0,
     )
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     mem.scratchpad.update("k", "v")  # so merge() will try to etch
     session = _FakeAgentSession()
 
@@ -1763,7 +1765,7 @@ async def test_on_session_start_continues_when_user_message_fails():
         async def say(self, text: str) -> None:
             raise RuntimeError("audio backend down")
 
-    mem = FAFMemory("grok", token="t", ledger=led)
+    mem = FAFMemory("grok", api_key="k", ledger=led)
     summary = await mem.on_session_start(_BrokenSaySession())
 
     # User message attempted but failed; resume still proceeded.
@@ -1777,13 +1779,13 @@ async def test_etch_paralinguistic_round_trip():
     soul, verify it's retrievable via paralinguistic_summary.
 
     Soul defaults to ``grok``; override via ``FAF_TEST_SOUL`` env.
-    Skipped unless MCPAAS_TOKEN is set.
+    Skipped unless MCPAAS_API_KEY is set.
     """
-    token = os.environ.get("MCPAAS_TOKEN")
-    if not token:
-        pytest.skip("MCPAAS_TOKEN not set — required for network tests")
+    api_key = os.environ.get("MCPAAS_API_KEY")
+    if not api_key:
+        pytest.skip("MCPAAS_API_KEY not set — required for network tests")
     soul = os.environ.get("FAF_TEST_SOUL", "grok")
-    mem = FAFMemory(soul, token=token)
+    mem = FAFMemory(soul, api_key=api_key)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     marker_value = f"pytest-tone-{timestamp}"

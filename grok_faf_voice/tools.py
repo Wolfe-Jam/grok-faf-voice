@@ -23,7 +23,7 @@ from FAFMemory itself.
 
 Use via `FAFMemory.tools(session)`:
 
-    mem = FAFMemory("grok", token=...)
+    mem = FAFMemory("grok", api_key=...)
     session = AgentSession(llm=xai.realtime.RealtimeModel(voice="Ara"))
     agent = Agent(instructions=..., tools=mem.tools(session))
     enable_global_tool_bus(mem, agent)  # gives bus coverage to every tool

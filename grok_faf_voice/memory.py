@@ -8,8 +8,8 @@ a Voice Session Ledger for audit + cross-session resumption, and
 paralinguistic markers (how the user spoke, not just what they said).
 
 Persistence is via the MCP protocol at `https://mcpaas.live/mcp`,
-served over Streamable HTTP. Auth is per-soul via an MCPaaS token
-(env `MCPAAS_TOKEN` or constructor arg).
+served over Streamable HTTP. Auth is per-soul via an MCPaaS API
+key (env `MCPAAS_API_KEY` or constructor arg `api_key=`).
 """
 
 from __future__ import annotations
@@ -65,10 +65,11 @@ logging.getLogger("mcp.client.streamable_http").setLevel(logging.ERROR)
 
 
 class FAFAuthRequiredError(RuntimeError):
-    """Raised when an op requires an MCPaaS token but none is configured.
+    """Raised when an op requires an MCPaaS API key but none is configured.
 
-    The friendly message guides the dev to the Voice key flow without
-    raising a low-level ToolError or surfacing implementation details.
+    The friendly message guides the dev to the Voice API key flow
+    without raising a low-level ToolError or surfacing implementation
+    details.
     """
 
 
@@ -109,16 +110,16 @@ class FAFMemory:
         allowlist; an invalid soul raises `fastmcp.exceptions.ToolError`
         on the first write. Read calls (`get`) return the soul's
         current state if it exists.
-    token : str, optional
-        MCPaaS auth token. Falls back to env var `MCPAAS_TOKEN` if not
-        provided. Required for writes; reads work without a token for
-        public souls.
+    api_key : str, optional
+        MCPaaS API key. Falls back to env var `MCPAAS_API_KEY` if not
+        provided. Required for writes; reads work without an API key
+        for public souls.
     mcp_url : str, optional
         Override the MCP endpoint URL. Defaults to `mcpaas.live/mcp`.
 
     Examples
     --------
-    >>> mem = FAFMemory("grok", token=os.environ["MCPAAS_TOKEN"])
+    >>> mem = FAFMemory("grok", api_key=os.environ["MCPAAS_API_KEY"])
     >>> await mem.etch("first memory", type="note", tags=["sdk", "milestone"])
     >>> soul_text = await mem.get()
 
@@ -140,13 +141,13 @@ class FAFMemory:
         self,
         soul: str,
         *,
-        token: str | None = None,
+        api_key: str | None = None,
         mcp_url: str = MCPAAS_URL,
         ledger: VoiceSessionLedger | None = None,
         bus: ContextBus | None = None,
     ) -> None:
         self._soul = soul
-        self._token = token or os.environ.get("MCPAAS_TOKEN")
+        self._api_key = api_key or os.environ.get("MCPAAS_API_KEY")
         self._mcp_url = mcp_url
         self._scratchpad = Scratchpad()
         self.ledger: VoiceSessionLedger = ledger or NullVoiceSessionLedger()
@@ -209,22 +210,29 @@ class FAFMemory:
         Raises
         ------
         FAFAuthRequiredError
-            No token is set (constructor arg or `MCPAAS_TOKEN` env). Etch
-            requires a Voice key. Friendly upgrade prompt included.
+            No API key is set (constructor arg or `MCPAAS_API_KEY` env).
+            Etch requires a Voice API key. Friendly upgrade prompt
+            included.
         fastmcp.exceptions.ToolError
             For server-side errors (invalid soul, etc.).
         """
-        if not self._token:
+        if not self._api_key:
             raise FAFAuthRequiredError(
-                "To save memories, get your free Voice key — coming soon. "
-                "For now, FAFMemory.get() works read-only against public souls."
+                "To save memories, get your free Voice API key — "
+                "coming soon. For now, FAFMemory.get() works read-only "
+                "against public souls."
             )
 
+        # Wire field name `token` is the MCPaaS server-side contract;
+        # the SDK exposes it as `api_key` to the user (matches XAI_API_KEY
+        # / LIVEKIT_API_KEY ecosystem). The wire field will rename to
+        # `api_key` once MCPaaS server-side updates — until then, the
+        # SDK passes self._api_key through the legacy `token` field.
         args: dict[str, Any] = {
             "soul": self._soul,
             "entry": entry,
             "type": type,
-            "token": self._token,
+            "token": self._api_key,
         }
         if tags:
             args["tags"] = tags
@@ -816,7 +824,7 @@ class FAFMemory:
 
         Fetches the live soul body and wraps it with a header so the
         model treats it as prior context. When the soul is empty or the
-        read fails (no token, network blip, ledger gap), returns the
+        read fails (no API key, network blip, ledger gap), returns the
         ``empty_message`` so the agent still opens cleanly — never raises.
 
         The caller composes this into the Agent's instructions::

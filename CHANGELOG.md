@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] — 2026-04-29 — Voice Memory Layer (VML) brand + onboarding
 
+### Changed (breaking — pre-1.0, no users)
+
+- **Renamed `token` → `api_key` across the SDK surface.** Matches
+  the FAF / xAI / LiveKit ecosystem convention (`XAI_API_KEY`,
+  `LIVEKIT_API_KEY`). The credential is long-lived and pasted into
+  `.env` — that's API-key shape, not session-token shape. Concrete
+  changes:
+  - Env var: `MCPAAS_TOKEN` → **`MCPAAS_API_KEY`**
+  - Constructor kwarg: `FAFMemory(soul, token=...)` → **`FAFMemory(soul, api_key=...)`**
+  - Internal attr: `self._token` → `self._api_key`
+  - Friendly error text: "Voice key" → "Voice API key"
+  - The MCP wire field stays `token` for now (server-side contract);
+    the SDK passes the api_key value through that field until
+    MCPaaS server-side renames. A code comment in `etch()` flags this.
+  No deprecation alias — the package was pre-1.0 with zero installed
+  users at rename time.
+
 ### Added
 
 - **Voice Memory Layer (VML)** — coined as the FAF-family term for

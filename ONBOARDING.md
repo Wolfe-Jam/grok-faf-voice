@@ -28,23 +28,23 @@ under five minutes.
 against public souls (`grok`, `faf`, `nelly`, `spacex`, etc.) work
 today without any auth.
 
-**Voice key (write auth)** — free flow launching soon:
+**Voice API key (write auth)** — free flow launching soon:
 
-- A free Voice key flow is launching on `mcpaas.live`. Until it
-  ships, `FAFMemory` is **read-only** against public souls (`grok`,
-  `faf`, `nelly`, `spacex`, etc.) — useful for exercising the recall
-  path while you wait for the writeable side.
+- A free **Voice API key** flow is launching on `mcpaas.live`. Until
+  it ships, `FAFMemory` is **read-only** against public souls
+  (`grok`, `faf`, `nelly`, `spacex`, etc.) — useful for exercising
+  the recall path while you wait for the writeable side.
 - The agent loop, scratchpad, paralinguistic markers, and the merge
   engine all run today against in-memory state and public-soul
-  reads. The persistence-to-soul step (etch / write_soul) needs the
-  Voice key.
-- Once the page is live, set `MCPAAS_TOKEN=<your-voice-key>` in
-  `.env` and your namepoint becomes write-capable.
+  reads. The persistence-to-soul step (etch / `write_soul`) needs
+  the Voice API key.
+- Once the page is live, set `MCPAAS_API_KEY=<your-voice-api-key>`
+  in `.env` and your namepoint becomes write-capable.
 
 > Note: the existing [mcpaas.live/slash/dashboard](https://mcpaas.live/slash/dashboard)
-> issues paid tokens for the Slash API gateway product (token-budget
-> estimation, separate from Voice). Don't use Slash tokens for Voice
-> writes — wait for the free Voice key page.
+> issues **paid Slash tokens** ($5) for the Slash API gateway product
+> (token-budget estimation) — separate from Voice. Don't use Slash
+> tokens for Voice writes; wait for the free Voice API key page.
 
 ---
 

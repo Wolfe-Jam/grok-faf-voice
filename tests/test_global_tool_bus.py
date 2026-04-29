@@ -61,7 +61,7 @@ async def test_global_wrapper_emits_pre_and_post_events():
     """A user-defined tool fires tool.about_to_run + tool.completed
     when invoked through the global wrapper.
     """
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []
@@ -96,7 +96,7 @@ async def test_global_wrapper_emits_error_on_exception():
     """A raising tool fires tool.completed with success=False + error,
     and the exception propagates (LiveKit error handling preserved).
     """
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []
@@ -133,7 +133,7 @@ async def test_global_wrapper_skips_already_wrapped_factory_tools():
     """FAFMemory factory output is tagged _bus_wrapped=True so the
     global wrapper leaves it alone (no double events on FAFMemory tools).
     """
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
 
     class _FakeSession:
         id = "fake"
@@ -163,7 +163,7 @@ async def test_global_wrapper_skips_already_wrapped_factory_tools():
 
 async def test_global_wrapper_idempotent_double_call():
     """Calling enable_global_tool_bus twice doesn't double-wrap user tools."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []
@@ -199,7 +199,7 @@ def test_global_wrapper_preserves_tool_metadata():
     """FunctionTool's info.name and info.description are still readable
     after the wrapper mutates _func.
     """
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
 
     user_tool = _make_user_tool("named_tool")
     pre_name = user_tool.info.name
@@ -221,7 +221,7 @@ async def test_update_tools_patched_for_future_additions():
     """Tools added via agent.update_tools() AFTER enable_global_tool_bus
     are also wrapped automatically.
     """
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []
@@ -252,7 +252,7 @@ async def test_update_tools_patched_for_future_additions():
 
 async def test_update_tools_patch_idempotent():
     """The update_tools patch isn't applied twice on repeat calls."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     agent = _FakeAgent(tools=[])
 
     enable_global_tool_bus(mem, agent)
@@ -283,7 +283,7 @@ async def test_wrapper_fires_through_function_tool_call_path():
     """
     import functools
 
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []
@@ -317,7 +317,7 @@ async def test_factory_tools_still_emit_domain_events_after_global_wrap():
     """
     from grok_faf_voice.tools import make_paralinguistic_tool
 
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
 
     received: list[BusEventPayload] = []

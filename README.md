@@ -100,7 +100,7 @@ primitives:
 - Python 3.10+
 - `XAI_API_KEY` — from [console.x.ai](https://console.x.ai)
 - `LIVEKIT_URL` + `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` — from [LiveKit Cloud](https://cloud.livekit.io)
-- `MCPAAS_TOKEN` — for soul writes (reads work without a token on public souls)
+- `MCPAAS_API_KEY` — Voice API key for soul writes (free flow launching soon; reads work without a key on public souls)
 - A `.faf` file describing your project (any text editor; minimal example below)
 
 ```yaml
@@ -128,7 +128,7 @@ from livekit.plugins import xai
 from grok_faf_voice import FAFContext, FAFMemory
 
 faf = FAFContext("project.faf")
-mem = FAFMemory("grok", token=os.environ.get("MCPAAS_TOKEN"))
+mem = FAFMemory("grok", api_key=os.environ.get("MCPAAS_API_KEY"))
 server = AgentServer()
 
 @server.rtc_session()
@@ -168,7 +168,7 @@ from grok_faf_voice import (
 faf = FAFContext("project.faf")
 mem = FAFMemory(
     soul=os.environ.get("FAF_SOUL", "grok"),
-    token=os.environ.get("MCPAAS_TOKEN"),
+    api_key=os.environ.get("MCPAAS_API_KEY"),
     ledger=InMemoryVoiceSessionLedger(),  # swap for a persistent backend in prod
 )
 

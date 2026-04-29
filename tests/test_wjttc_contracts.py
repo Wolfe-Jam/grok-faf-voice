@@ -165,6 +165,24 @@ def test_mcpaas_tool_names_referenced_in_source():
     assert '"get_soul"' in src, "MCPaaS get_soul tool name no longer referenced"
 
 
+def test_mcpaas_api_key_env_var_name():
+    """Env var name is the public SDK contract. Pin
+    `MCPAAS_API_KEY` so an accidental rename back to the old
+    `MCPAAS_TOKEN` (or any other variant) trips the test rather
+    than silently breaking every user's `.env`."""
+    from grok_faf_voice.memory import FAFMemory
+
+    src = inspect.getsource(FAFMemory.__init__)
+    assert '"MCPAAS_API_KEY"' in src, (
+        "MCPAAS_API_KEY env var no longer read in __init__ — "
+        ".env-based auth would silently break"
+    )
+    assert '"MCPAAS_TOKEN"' not in src, (
+        "Old MCPAAS_TOKEN env var name resurfaced — should be "
+        "MCPAAS_API_KEY (renamed in v0.1.2)"
+    )
+
+
 # ----------------------------------------------------------------
 # fastmcp — the MCP client library
 # ----------------------------------------------------------------

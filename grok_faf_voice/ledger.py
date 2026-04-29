@@ -159,7 +159,7 @@ class InMemoryVoiceSessionLedger:
     Examples
     --------
     >>> ledger = InMemoryVoiceSessionLedger()
-    >>> mem = FAFMemory("grok", token="...", ledger=ledger)
+    >>> mem = FAFMemory("grok", api_key="...", ledger=ledger)
     >>> # ... session runs, merge fires ...
     >>> ledger.attempts[0]["status"]
     'completed'

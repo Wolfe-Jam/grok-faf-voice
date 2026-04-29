@@ -239,20 +239,20 @@ async def test_full_queue_drops_with_warning(caplog):
 
 def test_fafmemory_owns_a_bus():
     """FAFMemory exposes its bus via the .bus property."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     assert isinstance(mem.bus, ContextBus)
 
 
 def test_fafmemory_bus_is_injectable():
     """A bus passed via constructor is honored (for tests / advanced use)."""
     bus = ContextBus()
-    mem = FAFMemory("grok", token="t", bus=bus)
+    mem = FAFMemory("grok", api_key="k", bus=bus)
     assert mem.bus is bus
 
 
 async def test_fafmemory_start_stop_bus_methods():
     """mem.start_bus() and mem.stop_bus() drive the bus lifecycle."""
-    mem = FAFMemory("grok", token="t")
+    mem = FAFMemory("grok", api_key="k")
     assert mem.bus.running is False
     await mem.start_bus()
     assert mem.bus.running is True

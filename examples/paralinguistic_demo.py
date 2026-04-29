@@ -35,7 +35,7 @@ load_dotenv()
 faf = FAFContext("project.faf")
 mem = FAFMemory(
     soul=os.environ.get("FAF_SOUL", "grok"),
-    token=os.environ.get("MCPAAS_TOKEN"),
+    api_key=os.environ.get("MCPAAS_API_KEY"),
 )
 
 server = AgentServer()
