@@ -26,6 +26,7 @@ Plus a Context Bus for async pub/sub over voice-memory events
 Stateless by default. Memory is a tool, not a baseline.
 """
 
+from grok_faf_voice.agent import VoiceAgent, VoiceAgentConfigError
 from grok_faf_voice.context import FAFContext
 from grok_faf_voice.context_bus import BusEvent, BusEventPayload, ContextBus
 from grok_faf_voice.ledger import (
@@ -62,6 +63,8 @@ __all__ = [
     "NullVoiceSessionLedger",
     "Scratchpad",
     "ScratchpadEntry",
+    "VoiceAgent",
+    "VoiceAgentConfigError",
     "VoiceSessionLedger",
     "enable_global_tool_bus",
 ]

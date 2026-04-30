@@ -5,72 +5,54 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] — 2026-04-29 — Voice Memory Layer (VML) brand + onboarding
-
-### Changed (breaking — pre-1.0, no users)
-
-- **Renamed `token` → `api_key` across the SDK surface.** Matches
-  the FAF / xAI / LiveKit ecosystem convention (`XAI_API_KEY`,
-  `LIVEKIT_API_KEY`). The credential is long-lived and pasted into
-  `.env` — that's API-key shape, not session-token shape. Concrete
-  changes:
-  - Env var: `MCPAAS_TOKEN` → **`MCPAAS_API_KEY`**
-  - Constructor kwarg: `FAFMemory(soul, token=...)` → **`FAFMemory(soul, api_key=...)`**
-  - Internal attr: `self._token` → `self._api_key`
-  - Friendly error text: "Voice key" → "Voice API key"
-  - The MCP wire field stays `token` for now (server-side contract);
-    the SDK passes the api_key value through that field until
-    MCPaaS server-side renames. A code comment in `etch()` flags this.
-  No deprecation alias — the package was pre-1.0 with zero installed
-  users at rename time.
+## [0.1.2] — 2026-04-29 — VoiceAgent zero-config
 
 ### Added
 
+- **`VoiceAgent` — the two-line shape:**
+  ```python
+  from grok_faf_voice import VoiceAgent
+  VoiceAgent().run()
+  ```
+  First run silently provisions an anonymous identity (namepoint +
+  Voice key) via `mcpaas.live` and persists it at
+  `~/.grok-faf-voice/identity.json` (mode `0600`). Subsequent runs
+  load the identity and the agent picks up every session knowing
+  what was etched in past ones. Only `XAI_API_KEY` is required;
+  LiveKit cloud env vars are optional (`console` mode runs locally).
+- **`VoiceAgentConfigError`** — actionable error class (missing
+  `XAI_API_KEY`, malformed identity file, unsupported voice, etc.).
+- **Identity precedence** — kwargs → env vars → local file →
+  anonymous provisioning. Power mode (`api_key=`, `namepoint=`) is
+  opt-in; existing `FAFMemory` / `FAFContext` primitives unchanged.
 - **Voice Memory Layer (VML)** — coined as the FAF-family term for
-  the voice-memory persistence category. File extension is `.fafm`
-  (not `.vml` — keeps the FAF family cohesive: `.faf` / `.fafb` /
-  `.fafm`). Media type `application/vnd.fafm+yaml` is planned for
-  IANA registration. This SDK is positioned as the reference
-  implementation of VML.
-- **`.fafm 🐘🎙️` family mark** — voice variant of the `.faf 🐘`
-  family mark. Microphone modifier qualifies the voice surface
-  (mirrors Grok's earned ⚡️ pattern in `grok-faf-mcp`).
-- **`ONBOARDING.md`** — five-minute one-pager. System requirements
-  (4 keys + 1 namepoint) preamble, then four numbered steps
-  (clone+venv → install+configure → verify with WJTTC → talk to
-  your agent). PR conventions footer.
-- **README polish (Bronze → Silver)**:
-  - Badges row (PyPI, Python, License, Tests) — FAF cyan (#00D4D4)
-    on metadata badges, MIT-yellow on License, dynamic on Tests.
-  - One-line problem statement: "Voice agents forget. This fixes it."
-  - "Three files, three audiences" reader-tree (`pyproject.toml` /
-    `project.faf` / `README.md` / `grok_faf_voice/`).
-  - "Two layers, one ecosystem" diagram pairing `.faf` (Foundational
-    Context Layer) with `.fafm` (Voice Memory Layer / VML).
-  - Quickstart split into Minimal (10-line) + Full integration.
-  - `Contributing` section linking ONBOARDING.md + WJTTC.md.
-  - Ecosystem star link (points at `Wolfe-Jam/faf-cli` per the
-    star-concentration strategy; sits in Lineage footer).
+  voice-memory persistence. Extension `.fafm` (family mark
+  `.fafm 🐘🎙️`). Media type `application/vnd.fafm+yaml` planned
+  for IANA registration. This SDK is the reference implementation.
+- **`examples/hello.py`** — the canonical two-line demo.
 
 ### Changed
 
-- **`pyproject.toml` description** shifted to sibling's pipe-bullet
-  rhythm: `grok-faf-voice | VML • Voice Memory Layer for Grok •
-  Persistent across sessions, devices, models • LiveKit-enabled`.
-- **Keywords trimmed** 13 → 10 high-signal terms across 5 question-
-  types: brand (`voice-memory-layer`, `vml`, `fafm`), platforms
-  (`grok`, `xai`, `livekit`), capability (`persistent-memory`,
-  `voice-agent`), differentiator (`paralinguistic`), protocol
-  (`mcp`). Dropped: `voice`, `memory`, `realtime` (too generic),
-  `faf` (covered by `fafm` + package name).
-- **License section** brand line promoted above MIT — "Don't copy
-  FAF brand. Do your own." now reads first.
-- **`__init__.py` module docstring** updated to position the SDK as
-  the VML reference implementation. `pip show` and IDE hover-help
-  carry the term.
-- **Stale `0.0.12` version reference** removed from the
-  "What it sounds like" dialog example. Narrative content is now
-  timeless.
+- **README rewritten around the Fast⚡️AF memory setup.** Hero is
+  the two-line install. Namepoint introduced as your `@handle` for
+  AI memory (like `@username` on X). Advanced setup details
+  (`FAFMemory`, custom ledgers, env-var configuration, retention
+  tiers) link out to [mcpaas.live/voice/about](https://mcpaas.live/voice/about).
+- **Renamed `token` → `api_key` across the SDK** (breaking,
+  pre-1.0, zero installed users). Env var: `MCPAAS_TOKEN` →
+  `MCPAAS_API_KEY`. Constructor kwarg: `FAFMemory(soul, token=...)`
+  → `FAFMemory(soul, api_key=...)`. Matches xAI / LiveKit
+  ecosystem convention.
+
+### Notes
+
+- Identity file location: `~/.grok-faf-voice/identity.json` (0600).
+- Anonymous identities are non-recoverable by design — SDK is the
+  system of record. For recoverability, claim a namepoint at
+  [mcpaas.live/voice/setup](https://mcpaas.live/voice/setup).
+- Retention tiers (90-day sliding for anonymous, 365-day for
+  email-claimed, unlimited with namepoint subscription) ride on
+  existing namepoint pricing — no separate Voice Pro SKU.
 
 ## [0.1.1] — 2026-04-29 — auto-merge session-reuse fix + WJTTC v1
 
