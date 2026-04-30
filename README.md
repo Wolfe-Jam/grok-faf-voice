@@ -7,8 +7,7 @@
 
 **Voice agents that remember.**
 
-The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` family.
-LiveKit enabled. MIT licensed.
+The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled.
 
 ---
 
@@ -25,9 +24,10 @@ VoiceAgent().run()
 ```
 
 That's it. First run, your agent gets a **namepoint** — your `@handle`
-for AI memory, the way `@username` is for X. Auto-generated free.
-Talk now, claim a real handle whenever you want at
-[mcpaas.live/voice/setup](https://mcpaas.live/voice/setup).
+for FAF memory. Auto-generated free, no email needed. Want a branded
+handle tied to your email (or your X username)? Claim one anytime at
+[mcpaas.live/voice/setup](https://mcpaas.live/voice/setup) — one per
+valid email address.
 
 ---
 
@@ -51,7 +51,7 @@ Deploy to LiveKit later via `python my_bot.py start`.
 
 ## How it works
 
-- The agent listens via xAI realtime — five voices: **Ara · Eve · Leo · Rex · Sal**
+- The agent listens via xAI realtime — five voices currently: **Ara · Eve · Leo · Rex · Sal**
 - Every session opens already remembering what was etched in past ones
 - At session end, new memories consolidate silently
 - Cross-session, cross-device, cross-model — your namepoint is the address
