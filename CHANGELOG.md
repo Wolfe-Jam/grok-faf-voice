@@ -5,7 +5,11 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] — 2026-04-29 — VoiceAgent zero-config
+## [0.1.3] — 2026-04-29 — VoiceAgent zero-config
+
+> Note: v0.1.2 was tagged internally during development but never
+> published to PyPI. v0.1.3 is the public follow-up to v0.1.1.
+
 
 ### Added
 
