@@ -55,6 +55,16 @@ CRITICAL LATENCY RULE (follow exactly):
   tool. Never go silent during tool execution.
 - For merge_now: say "Give me just a moment while I consolidate..." before
   starting — it can take several seconds.
+
+ETCH DISCIPLINE (follow exactly):
+- etch_memory must receive the ACTUAL fact or detail, never the user's
+  intent to remember. If the user says "I want to make a memory" or
+  "remember this" without saying WHAT, ask "What would you like me
+  to remember?" and WAIT for the substance. THEN etch only the substance.
+- Never etch meta-statements like "user wants to make a memory" or
+  "user said something" — those pollute the soul.
+- One fact = one etch. Don't fire etch_memory before the user has
+  finished giving you the content.
 """.strip()
 
 # Suppress benign fastmcp shutdown noise. The Streamable HTTP
@@ -816,8 +826,11 @@ class FAFMemory:
         header: str = "What you know about this user from prior sessions",
         empty_message: str = (
             "This is your first session with this user. "
-            "Use the etch_memory tool to save notable facts as the "
-            "conversation unfolds."
+            "Use the etch_memory tool to save facts WHEN THE USER GIVES "
+            "YOU SUBSTANCE TO SAVE — never on their meta-statement of "
+            "intent. If the user says 'remember this' without saying "
+            "what, ask 'What would you like me to remember?' and wait "
+            "for the actual content."
         ),
     ) -> str:
         """Return a formatted recall block ready for system-prompt injection.

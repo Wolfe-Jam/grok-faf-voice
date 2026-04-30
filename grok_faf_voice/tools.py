@@ -71,15 +71,34 @@ def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
     async def etch_memory(context: RunContext, content: str) -> str:
         """Save content to persistent eternal memory.
 
-        Use when the user says "etch this", "remember this",
-        "save that", or otherwise asks to record something durably.
-        The content will survive across sessions, devices, and
-        model switches.
+        ONLY CALL THIS TOOL WHEN YOU HAVE THE ACTUAL FACT TO REMEMBER.
+        The ``content`` argument MUST be the substance itself — never
+        the user's meta-statement about wanting to remember something.
+
+        EXAMPLES (correct):
+          User: "Remember my favorite color is cyan."
+          → etch_memory(content="favorite color is cyan")
+
+          User: "Etch this — today is launch day for v0.1.3."
+          → etch_memory(content="today is launch day for v0.1.3")
+
+        EXAMPLES (DO NOT do this):
+          User: "I want to make a memory."
+          → DO NOT CALL THIS TOOL. The user has stated intent but no
+            substance. Reply: "Sure, what would you like me to
+            remember?" Wait for the actual content, then call
+            etch_memory with ONLY the content (not the user's intent).
+
+          User: "Make a note."
+          → DO NOT CALL THIS TOOL. Reply: "Of course, what should I
+            note?" Wait, then etch the substance.
+
+        Etching meta-statements ("user wants to make a memory") pollutes
+        the soul with non-content. When in doubt, ASK and WAIT.
 
         CRITICAL LATENCY RULE (must follow):
         - ALWAYS speak a short natural bridge FIRST (under 400ms):
-          "Got it.", "Noted.", "I'll remember that.", "Jotting that
-          down.", or "Understood." — THEN call this tool.
+          "Got it.", "Noted.", "I'll remember that." — THEN call this tool.
         - Never go silent. The realtime stream emits no filler audio
           during tool execution.
         """

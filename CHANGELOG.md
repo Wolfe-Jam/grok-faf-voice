@@ -48,6 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   → `FAFMemory(soul, api_key=...)`. Matches xAI / LiveKit
   ecosystem convention.
 
+### Fixed
+
+- **Etch discipline — agent no longer etches meta-statements.**
+  The `etch_memory` tool description previously said "Use when the
+  user says 'remember this'" without distinguishing intent from
+  substance, so the model would fire the tool on user intent
+  ("I want to make a memory") and stuff the meta-statement into
+  the soul. Three etches to capture one fact. Tool description
+  now requires the substance itself; ETCH DISCIPLINE rules added
+  to `LATENCY_BRIDGE_INSTRUCTIONS` reinforce: ask "what would you
+  like me to remember?" when the user states intent without
+  content, then etch only the content.
+
 ### Notes
 
 - Identity file location: `~/.grok-faf-voice/identity.json` (0600).
