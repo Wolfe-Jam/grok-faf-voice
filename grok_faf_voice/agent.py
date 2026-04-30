@@ -413,10 +413,14 @@ class VoiceAgent:
 
         @server.rtc_session()
         async def entrypoint(ctx: agents.JobContext) -> None:
-            session = AgentSession(
+            # turn_detection is a plain dict at the LiveKit wire level —
+            # the typed TurnDetection class is overly strict for the
+            # server_vad params we pass. Same pattern as
+            # examples/hello_grok_with_etch.py.
+            session: AgentSession = AgentSession(
                 llm=xai.realtime.RealtimeModel(
                     voice=voice,
-                    turn_detection={
+                    turn_detection={  # type: ignore[arg-type]
                         "type": "server_vad",
                         "threshold": 0.85,
                         "silence_duration_ms": 500,
