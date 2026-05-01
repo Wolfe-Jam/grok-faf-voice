@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] — 2026-05-01 — Custom Voice support
 
 xAI announced their Custom Voice API on **2026-05-01**. This release
-ships SDK-side support **72h later**, fulfilling the v0.2.0 Identity
+ships SDK-side support **48h later**, fulfilling the v0.2.0 Identity
 roadmap slot — your voice is now part of your identity, alongside
 your namepoint and Voice key.
 

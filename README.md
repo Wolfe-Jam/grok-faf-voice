@@ -62,7 +62,7 @@ Voice swappable, memory permanent. ElevenLabs and Hume land in upcoming releases
 
 ## Custom Voices
 
-xAI shipped Custom Voices on **2026-05-01**. We shipped support **72h later**.
+xAI shipped Custom Voices on **2026-05-01**. We shipped support **48h later**.
 
 ```python
 from grok_faf_voice import CustomVoiceClient, VoiceAgent
