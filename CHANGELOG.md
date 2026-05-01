@@ -5,6 +5,72 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-05-01 — Custom Voice support
+
+xAI announced their Custom Voice API on **2026-05-01**. This release
+ships SDK-side support **72h later**, fulfilling the v0.2.0 Identity
+roadmap slot — your voice is now part of your identity, alongside
+your namepoint and Voice key.
+
+### Added
+
+- **`CustomVoiceClient`** — sync HTTP client for xAI's Custom Voices
+  API. Voice CRUD (`create_voice`, `list_voices`, `get_voice`,
+  `update_voice`, `delete_voice`, `download_reference_audio`) plus
+  `text_to_speech` synthesis. Built on `httpx.Client` — no new
+  dependencies.
+
+  ```python
+  from grok_faf_voice import CustomVoiceClient
+
+  cv = CustomVoiceClient()  # uses $XAI_API_KEY
+
+  # Clone a voice from a 90-120s WAV sample
+  voice = cv.create_voice("sample.wav", name="My Clone", language="en")
+
+  # Synthesize TTS with the cloned voice
+  cv.text_to_speech(
+      "Hello from the new voice",
+      voice_id=voice["voice_id"],
+      output_path="hello.mp3",
+  )
+  ```
+
+- **Custom voice IDs accepted by `VoiceAgent(voice=...)`.** The
+  validator now recognizes both the five built-in voices
+  (case-insensitive: `Ara`, `Eve`, `Leo`, `Rex`, `Sal`) AND custom
+  voice IDs (the 8-character lowercase alphanumeric IDs returned by
+  `CustomVoiceClient.create_voice()`). The `voice_id` parameter
+  flows through unchanged into the LiveKit / xAI realtime layer —
+  xAI accepts either form on the same endpoint.
+
+  ```python
+  from grok_faf_voice import VoiceAgent
+  VoiceAgent(voice="nlbqfwie").run()  # custom-cloned voice
+  ```
+
+- **`examples/hello_custom_voice.py`** — end-to-end demo showing
+  voice clone → `VoiceAgent` integration in the same two-line shape.
+
+### Changed
+
+- **Validation error message expanded** to guide users to xAI's
+  Custom Voices docs when an unrecognized voice is passed. Built-in
+  voice acceptance is now case-insensitive at the SDK boundary
+  (matches xAI API behavior).
+
+### Notes
+
+- `XAI_API_KEY` is the only credential needed for `CustomVoiceClient`
+  — same key as `VoiceAgent`. Voice IDs you create persist on your
+  xAI account and can be reused across sessions, devices, and SDK
+  versions.
+- The 30 free voices available via the [xAI console](https://console.x.ai)
+  work too — pass their `voice_id` directly to `VoiceAgent(voice=...)`
+  or `CustomVoiceClient.text_to_speech()`.
+- No breaking changes to the v0.1.3 surface. Existing two-line
+  `VoiceAgent().run()` code keeps working unchanged.
+
 ## [0.1.3] — 2026-04-30 — VoiceAgent zero-config
 
 > Note: v0.1.2 was tagged internally during development but never

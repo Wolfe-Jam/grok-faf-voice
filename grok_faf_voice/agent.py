@@ -52,6 +52,37 @@ log = logging.getLogger("grok_faf_voice.agent")
 # xAI realtime voices — validated at construction so typos surface early.
 SUPPORTED_VOICES: tuple[str, ...] = ("Ara", "Eve", "Leo", "Rex", "Sal")
 
+
+def _is_valid_voice(voice: str) -> bool:
+    """Check if a voice string is acceptable.
+
+    Accepts:
+      - Built-in voice names (case-insensitive): Ara, Eve, Leo, Rex, Sal
+      - Custom voice IDs: exactly 8 chars, lowercase, alphanumeric
+
+    Custom voice ID format is fixed per xAI Custom Voices API docs:
+    https://docs.x.ai/developers/model-capabilities/audio/voice
+    Quote: ``voice_id: 8-character lowercase alphanumeric identifier``.
+
+    Returns True if the voice is a built-in (any case) or a valid
+    custom voice ID, False otherwise.
+    """
+    if voice in SUPPORTED_VOICES:
+        return True
+    # Built-in case-insensitive match (xAI accepts either case)
+    if voice.lower() in {v.lower() for v in SUPPORTED_VOICES}:
+        return True
+    # Custom voice ID: exactly 8 chars, lowercase alphanumeric.
+    # Note: "12345678".islower() is False (no cased chars), so check
+    # for absence of uppercase rather than presence of lowercase.
+    if (
+        len(voice) == 8
+        and voice.isalnum()
+        and not any(c.isupper() for c in voice)
+    ):
+        return True
+    return False
+
 # Where the anonymous identity is persisted locally. The SDK is the
 # system of record for anonymous identities — server has no recovery
 # flow without an email.
@@ -296,10 +327,14 @@ class VoiceAgent:
         anonymous_issue_url: str = DEFAULT_ANONYMOUS_ISSUE_URL,
         voice_name: str | None = None,
     ) -> None:
-        if voice not in SUPPORTED_VOICES:
+        if not _is_valid_voice(voice):
             raise VoiceAgentConfigError(
-                f"voice={voice!r} is not a supported xAI realtime voice. "
-                f"Choose one of: {', '.join(SUPPORTED_VOICES)}."
+                f"voice={voice!r} is not a recognized voice. "
+                f"Use a built-in voice (case-insensitive): "
+                f"{', '.join(SUPPORTED_VOICES)} — "
+                f"or a custom voice ID (8 lowercase alphanumeric chars), "
+                f"created via xAI's Custom Voices API: "
+                f"https://docs.x.ai/developers/model-capabilities/audio/voice"
             )
         if (api_key is None) ^ (namepoint is None):
             raise VoiceAgentConfigError(

@@ -29,6 +29,7 @@ Stateless by default. Memory is a tool, not a baseline.
 from grok_faf_voice.agent import VoiceAgent, VoiceAgentConfigError
 from grok_faf_voice.context import FAFContext
 from grok_faf_voice.context_bus import BusEvent, BusEventPayload, ContextBus
+from grok_faf_voice.custom_voices import CustomVoiceClient
 from grok_faf_voice.ledger import (
     InMemoryVoiceSessionLedger,
     MergeAttempt,
@@ -46,11 +47,12 @@ from grok_faf_voice.memory import (
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 from grok_faf_voice.tools import enable_global_tool_bus
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"
 __all__ = [
     "BusEvent",
     "BusEventPayload",
     "ContextBus",
+    "CustomVoiceClient",
     "FAFAuthRequiredError",
     "FAFContext",
     "FAFEtchError",

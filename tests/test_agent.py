@@ -48,6 +48,48 @@ class TestVoiceAgentConstruction:
         for v in SUPPORTED_VOICES:
             assert v in msg, f"error message must list {v}"
 
+    def test_built_in_voice_case_insensitive(self) -> None:
+        """Built-in voice names must be accepted regardless of case."""
+        for variant in ("Ara", "ARA", "ara", "aRa"):
+            VoiceAgent(voice=variant)  # must not raise
+        for variant in ("EVE", "eve", "Eve"):
+            VoiceAgent(voice=variant)
+
+    def test_valid_custom_voice_id_accepted(self) -> None:
+        """8-char lowercase alphanumeric custom voice IDs are accepted."""
+        for vid in ("abcdefgh", "12345678", "nlbqfwie", "a1b2c3d4"):
+            VoiceAgent(voice=vid)  # must not raise
+
+    def test_custom_voice_id_uppercase_rejected(self) -> None:
+        """Uppercase voice IDs are not valid (xAI spec is lowercase)."""
+        with pytest.raises(VoiceAgentConfigError):
+            VoiceAgent(voice="ABCDEFGH")
+
+    def test_custom_voice_id_too_short_rejected(self) -> None:
+        """7-char IDs are not valid (xAI spec is exactly 8 chars)."""
+        with pytest.raises(VoiceAgentConfigError):
+            VoiceAgent(voice="abcdefg")
+
+    def test_custom_voice_id_too_long_rejected(self) -> None:
+        """9-char IDs are not valid (xAI spec is exactly 8 chars)."""
+        with pytest.raises(VoiceAgentConfigError):
+            VoiceAgent(voice="abcdefghi")
+
+    def test_custom_voice_id_with_special_chars_rejected(self) -> None:
+        """Non-alphanumeric chars are not valid in custom voice IDs."""
+        with pytest.raises(VoiceAgentConfigError):
+            VoiceAgent(voice="abc-defg")  # exactly 8 chars but has dash
+
+    def test_unsupported_voice_message_mentions_custom_id_format(self) -> None:
+        """The error must guide users to xAI's Custom Voice API."""
+        with pytest.raises(VoiceAgentConfigError) as exc:
+            VoiceAgent(voice="NotARealVoice")
+        msg = str(exc.value)
+        # Should mention the custom-ID option as well as built-ins
+        assert "custom" in msg.lower()
+        assert "8" in msg  # 8-char hint
+        assert "x.ai" in msg.lower() or "xai" in msg.lower()
+
     def test_lopsided_explicit_kwargs_rejected(self) -> None:
         with pytest.raises(VoiceAgentConfigError):
             VoiceAgent(api_key="x")

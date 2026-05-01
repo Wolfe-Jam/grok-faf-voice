@@ -14,3 +14,10 @@ htmlcov/
 .DS_Store
 *.bak
 grok-soul-*.bak
+
+# mcp-publisher credentials (never commit)
+.mcpregistry_*_token
+
+# faf-cli sync artifacts (per-project, not tracked here)
+CLAUDE.md
+MEMORY.md

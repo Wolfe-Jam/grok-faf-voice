@@ -51,13 +51,33 @@ Deploy to LiveKit later via `python my_bot.py start`.
 
 ## How it works
 
-- The agent listens via xAI realtime — five voices currently: **Ara · Eve · Leo · Rex · Sal**
+- The agent listens via xAI realtime — five built-in voices: **Ara · Eve · Leo · Rex · Sal**
 - Every session opens already remembering what was etched in past ones
 - At session end, new memories consolidate silently
 - Cross-session, cross-device, cross-model — your namepoint is the address
 
-Voice swappable, memory permanent. ElevenLabs, Hume, and custom voice
-cloning land in upcoming releases.
+Voice swappable, memory permanent. ElevenLabs and Hume land in upcoming releases.
+
+---
+
+## Custom Voices
+
+xAI shipped Custom Voices on **2026-05-01**. We shipped support **72h later**.
+
+```python
+from grok_faf_voice import CustomVoiceClient, VoiceAgent
+
+# Clone a voice from a 90-120s WAV sample
+cv = CustomVoiceClient()  # uses $XAI_API_KEY
+voice = cv.create_voice("sample.wav", name="My Clone", language="en")
+
+# Use the cloned voice in your agent — same two-line shape
+VoiceAgent(voice=voice["voice_id"]).run()
+```
+
+Custom voice IDs (8-char lowercase alphanumeric, e.g. `nlbqfwie`) flow through
+`VoiceAgent(voice=...)` unchanged. The 30 free voices via [console.x.ai](https://console.x.ai)
+work too — paste the `voice_id` and go.
 
 ---
 
