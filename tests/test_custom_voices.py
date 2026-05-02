@@ -15,7 +15,6 @@ import pytest
 
 from grok_faf_voice.custom_voices import CustomVoiceClient
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
@@ -183,7 +182,8 @@ class TestErrorHandling:
             mock_response.status_code = status
             mock_response.json.return_value = body
             mock_response.request = MagicMock()
-            mock_client_class.return_value.__enter__.return_value.request.return_value = mock_response
+            ctx = mock_client_class.return_value.__enter__.return_value
+            ctx.request.return_value = mock_response
 
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 if status == 404:

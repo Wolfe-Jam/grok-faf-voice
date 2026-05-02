@@ -44,7 +44,7 @@ from __future__ import annotations
 import mimetypes
 import os
 from pathlib import Path
-from typing import Any, BinaryIO, Optional, Union
+from typing import Any, BinaryIO
 
 import httpx
 
@@ -72,7 +72,7 @@ class CustomVoiceClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.api_key = api_key or os.getenv("XAI_API_KEY")
@@ -115,15 +115,15 @@ class CustomVoiceClient:
 
     def create_voice(
         self,
-        file: Union[str, Path, BinaryIO],
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        gender: Optional[str] = None,
-        accent: Optional[str] = None,
-        age: Optional[str] = None,
-        language: Optional[str] = None,
-        use_case: Optional[str] = None,
-        tone: Optional[str] = None,
+        file: str | Path | BinaryIO,
+        name: str | None = None,
+        description: str | None = None,
+        gender: str | None = None,
+        accent: str | None = None,
+        age: str | None = None,
+        language: str | None = None,
+        use_case: str | None = None,
+        tone: str | None = None,
     ) -> dict:
         """Clone a voice from an audio sample (multipart upload).
 
@@ -206,7 +206,7 @@ class CustomVoiceClient:
     def download_reference_audio(
         self,
         voice_id: str,
-        out: Union[str, Path],
+        out: str | Path,
     ) -> Path:
         """Download the reference audio sample used to clone this voice.
 
@@ -226,10 +226,10 @@ class CustomVoiceClient:
         text: str,
         voice_id: str,
         language: str = "en",
-        output_format: Optional[dict] = None,
+        output_format: dict | None = None,
         optimize_streaming_latency: int = 0,
         text_normalization: bool = False,
-        output_path: Optional[Union[str, Path]] = None,
+        output_path: str | Path | None = None,
     ) -> bytes:
         """Synthesize speech from text using any voice — built-in or custom.
 
@@ -292,7 +292,7 @@ class CustomVoiceClient:
             for v in ("ara", "eve", "leo", "rex", "sal")
         ]
 
-    def get_voice_id_for_name(self, name: str) -> Optional[str]:
+    def get_voice_id_for_name(self, name: str) -> str | None:
         """Resolve a built-in voice name OR a custom voice_id to a canonical ID.
 
         - Built-in names match case-insensitively (``"Ara"``, ``"ara"``,

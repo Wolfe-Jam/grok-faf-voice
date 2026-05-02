@@ -27,7 +27,6 @@ from grok_faf_voice.agent import (
     _resolve_identity,
 )
 
-
 # ── Construction validation ────────────────────────────────────────────────
 
 
