@@ -245,22 +245,38 @@ class TestVoiceIDHelpers:
         assert client.get_voice_id_for_name("ara") == "ara"
         assert client.get_voice_id_for_name("Eve") == "eve"
 
-    def test_get_voice_id_for_name_passes_through_custom_ids(
+    def test_get_voice_id_for_name_passes_through_8_char_presets(
         self,
         client: CustomVoiceClient,
     ) -> None:
-        """8-char lowercase alphanumeric IDs pass through unchanged."""
+        """8-char preset voice IDs pass through unchanged."""
         assert client.get_voice_id_for_name("abcdefgh") == "abcdefgh"
         assert client.get_voice_id_for_name("12345678") == "12345678"
         assert client.get_voice_id_for_name("nlbqfwie") == "nlbqfwie"
+        assert client.get_voice_id_for_name("355dca53") == "355dca53"
+
+    def test_get_voice_id_for_name_passes_through_12_char_clones(
+        self,
+        client: CustomVoiceClient,
+    ) -> None:
+        """12-char custom clone voice IDs pass through unchanged.
+
+        Spec confirmed by xAI on 2026-05-03: console clones are 12 chars.
+        """
+        assert client.get_voice_id_for_name("vluy2u1jtsif") == "vluy2u1jtsif"
+        assert client.get_voice_id_for_name("abcdefghijkl") == "abcdefghijkl"
+        assert client.get_voice_id_for_name("a1b2c3d4e5f6") == "a1b2c3d4e5f6"
 
     def test_get_voice_id_for_name_rejects_invalid(
         self,
         client: CustomVoiceClient,
     ) -> None:
-        """Returns None for inputs that match neither built-in nor custom format."""
+        """Returns None for inputs that match neither built-in nor 8/12-char custom format."""
         assert client.get_voice_id_for_name("Bob") is None  # not a built-in
-        assert client.get_voice_id_for_name("ABCDEFGH") is None  # uppercase custom
+        assert client.get_voice_id_for_name("ABCDEFGH") is None  # uppercase 8-char
+        assert client.get_voice_id_for_name("VLUY2U1JTSIF") is None  # uppercase 12-char
         assert client.get_voice_id_for_name("abcdefg") is None  # 7 chars
         assert client.get_voice_id_for_name("abcdefghi") is None  # 9 chars
+        assert client.get_voice_id_for_name("abcdefghij") is None  # 10 chars (between 8 and 12)
+        assert client.get_voice_id_for_name("abcdefghijklm") is None  # 13 chars
         assert client.get_voice_id_for_name("abc-defg") is None  # special char

@@ -5,6 +5,46 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-03 — Custom clone voice ID support
+
+Hotfix for v0.2.0. v0.2.0's validator enforced "exactly 8 chars" per
+the published xAI Custom Voices API docs ("voice_id: 8-character
+lowercase alphanumeric identifier"). Real custom console clones return
+**12 chars** (e.g. `vluy2u1jtsif`), so v0.2.0 rejected them at the
+`VoiceAgent(voice=...)` constructor. Workaround in v0.2.0 was to use
+the `CustomVoiceClient.text_to_speech()` path directly, which never
+enforced the validator.
+
+### Fixed
+
+- **`VoiceAgent(voice=...)` now accepts both preset and custom clone
+  voice IDs.** Validator updated to accept exactly **8 chars** (console
+  presets, e.g. `355dca53` / `nlbqfwie`) **OR** exactly **12 chars**
+  (custom console clones, e.g. `vluy2u1jtsif`). Discrete tiers, not a
+  range — anything else (7, 9, 10, 11, 13+) is rejected.
+- **Error message expanded** to mention both length tiers and link to
+  console.x.ai for clone creation.
+
+### Spec source
+
+The two-length spec was confirmed by xAI on 2026-05-03 in a public
+spec exchange (replying to wolfejam's v0.2.0 release thread on X).
+Quoted from the answer:
+
+> *"Custom console clones are currently 12 chars (presets remain 8).
+> /v1/tts accepts both with no tier-specific restrictions."*
+
+Capped at 12 chars — no plans to extend further.
+
+### Notes
+
+- v0.2.0's `CustomVoiceClient.text_to_speech()` path was unaffected and
+  always accepted 12-char IDs (the strict-8 validator only fires on the
+  `VoiceAgent` constructor). Anyone using v0.2.0 for TTS only could
+  upgrade or stay; anyone wanting `VoiceAgent(voice="<12-char-clone>")`
+  needs v0.2.1.
+- No new dependencies. No breaking changes to v0.2.0 surface.
+
 ## [0.2.0] — 2026-05-01 — Custom Voice support
 
 xAI announced their Custom Voice API on **2026-05-01**. This release

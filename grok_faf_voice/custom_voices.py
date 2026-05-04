@@ -297,18 +297,21 @@ class CustomVoiceClient:
 
         - Built-in names match case-insensitively (``"Ara"``, ``"ara"``,
           ``"ARA"`` all return ``"ara"``).
-        - Custom voice IDs (8-char lowercase alphanumeric) pass through.
+        - Custom voice IDs (8 OR 12 chars, lowercase alphanumeric) pass
+          through. 8-char IDs are console presets; 12-char IDs are custom
+          clones (per xAI spec confirmation 2026-05-03).
         - Returns ``None`` if input is neither.
         """
         n = name.lower()
         for v in self.list_built_in_voices():
             if v["name"].lower() == n or v["voice_id"] == n:
                 return v["voice_id"]
-        # Custom voice ID pattern (per xAI docs: 8-char lowercase alphanumeric).
-        # Note: ``"12345678".islower()`` is False because there are no cased
-        # chars — check for absence of uppercase instead.
+        # Custom voice ID pattern: 8 (preset) OR 12 (clone) chars,
+        # lowercase alphanumeric. Note: ``"12345678".islower()`` is False
+        # because there are no cased chars — check for absence of
+        # uppercase instead.
         if (
-            len(name) == 8
+            len(name) in (8, 12)
             and name.isalnum()
             and not any(c.isupper() for c in name)
         ):

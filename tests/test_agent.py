@@ -54,39 +54,54 @@ class TestVoiceAgentConstruction:
         for variant in ("EVE", "eve", "Eve"):
             VoiceAgent(voice=variant)
 
-    def test_valid_custom_voice_id_accepted(self) -> None:
-        """8-char lowercase alphanumeric custom voice IDs are accepted."""
-        for vid in ("abcdefgh", "12345678", "nlbqfwie", "a1b2c3d4"):
+    def test_valid_8_char_preset_id_accepted(self) -> None:
+        """Console preset voice IDs (8 chars lowercase alphanumeric)."""
+        for vid in ("abcdefgh", "12345678", "nlbqfwie", "a1b2c3d4", "355dca53"):
+            VoiceAgent(voice=vid)  # must not raise
+
+    def test_valid_12_char_clone_id_accepted(self) -> None:
+        """Custom console clone voice IDs (12 chars lowercase alphanumeric).
+
+        Spec confirmed by xAI on 2026-05-03 — custom clones use 12 chars,
+        presets use 8. Both lengths share the same /v1/tts endpoint.
+        """
+        for vid in ("vluy2u1jtsif", "abcdefghijkl", "a1b2c3d4e5f6", "123456789abc"):
             VoiceAgent(voice=vid)  # must not raise
 
     def test_custom_voice_id_uppercase_rejected(self) -> None:
         """Uppercase voice IDs are not valid (xAI spec is lowercase)."""
         with pytest.raises(VoiceAgentConfigError):
-            VoiceAgent(voice="ABCDEFGH")
-
-    def test_custom_voice_id_too_short_rejected(self) -> None:
-        """7-char IDs are not valid (xAI spec is exactly 8 chars)."""
+            VoiceAgent(voice="ABCDEFGH")  # 8 uppercase
         with pytest.raises(VoiceAgentConfigError):
-            VoiceAgent(voice="abcdefg")
+            VoiceAgent(voice="VLUY2U1JTSIF")  # 12 uppercase
 
-    def test_custom_voice_id_too_long_rejected(self) -> None:
-        """9-char IDs are not valid (xAI spec is exactly 8 chars)."""
-        with pytest.raises(VoiceAgentConfigError):
-            VoiceAgent(voice="abcdefghi")
+    def test_custom_voice_id_invalid_lengths_rejected(self) -> None:
+        """Only exactly 8 OR exactly 12 chars are valid — discrete, not range.
+
+        xAI's spec defines two specific lengths (8 = preset, 12 = clone).
+        Anything else (7, 9, 10, 11, 13, ...) must be rejected.
+        """
+        for vid in ("abcdefg", "abcdefghi", "abcdefghij", "abcdefghijk",
+                    "abcdefghijklm", "abcdefghijklmn"):
+            with pytest.raises(VoiceAgentConfigError):
+                VoiceAgent(voice=vid)
 
     def test_custom_voice_id_with_special_chars_rejected(self) -> None:
         """Non-alphanumeric chars are not valid in custom voice IDs."""
         with pytest.raises(VoiceAgentConfigError):
-            VoiceAgent(voice="abc-defg")  # exactly 8 chars but has dash
+            VoiceAgent(voice="abc-defg")  # 8 chars but has dash
+        with pytest.raises(VoiceAgentConfigError):
+            VoiceAgent(voice="vluy2u1_tsif")  # 12 chars but has underscore
 
-    def test_unsupported_voice_message_mentions_custom_id_format(self) -> None:
-        """The error must guide users to xAI's Custom Voice API."""
+    def test_unsupported_voice_message_mentions_both_lengths(self) -> None:
+        """The error must guide users to both preset and clone formats."""
         with pytest.raises(VoiceAgentConfigError) as exc:
             VoiceAgent(voice="NotARealVoice")
         msg = str(exc.value)
-        # Should mention the custom-ID option as well as built-ins
+        # Should mention the custom-ID option, both lengths, and xAI
         assert "custom" in msg.lower()
-        assert "8" in msg  # 8-char hint
+        assert "8" in msg   # preset length
+        assert "12" in msg  # clone length
         assert "x.ai" in msg.lower() or "xai" in msg.lower()
 
     def test_lopsided_explicit_kwargs_rejected(self) -> None:

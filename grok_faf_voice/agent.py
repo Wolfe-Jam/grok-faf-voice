@@ -58,11 +58,16 @@ def _is_valid_voice(voice: str) -> bool:
 
     Accepts:
       - Built-in voice names (case-insensitive): Ara, Eve, Leo, Rex, Sal
-      - Custom voice IDs: exactly 8 chars, lowercase, alphanumeric
+      - Custom voice IDs: exactly 8 OR 12 chars, lowercase, alphanumeric
 
-    Custom voice ID format is fixed per xAI Custom Voices API docs:
-    https://docs.x.ai/developers/model-capabilities/audio/voice
-    Quote: ``voice_id: 8-character lowercase alphanumeric identifier``.
+    xAI's Custom Voices API uses two discrete voice_id lengths:
+      - 8 chars  : console preset library voices (e.g. ``355dca53``)
+      - 12 chars : custom console clones (e.g. ``vluy2u1jtsif``)
+
+    Both lengths are accepted on the same ``/v1/tts`` endpoint with no
+    tier-specific restrictions. Spec confirmed by xAI on 2026-05-03 in
+    a public spec exchange (after v0.2.0 shipped strict-8 and rejected
+    real Enterprise clones). Capped at 12 — no plans to extend.
 
     Returns True if the voice is a built-in (any case) or a valid
     custom voice ID, False otherwise.
@@ -72,11 +77,11 @@ def _is_valid_voice(voice: str) -> bool:
     # Built-in case-insensitive match (xAI accepts either case)
     if voice.lower() in {v.lower() for v in SUPPORTED_VOICES}:
         return True
-    # Custom voice ID: exactly 8 chars, lowercase alphanumeric.
+    # Custom voice ID: exactly 8 OR 12 chars, lowercase alphanumeric.
     # Note: "12345678".islower() is False (no cased chars), so check
     # for absence of uppercase rather than presence of lowercase.
     if (
-        len(voice) == 8
+        len(voice) in (8, 12)
         and voice.isalnum()
         and not any(c.isupper() for c in voice)
     ):
@@ -332,7 +337,8 @@ class VoiceAgent:
                 f"voice={voice!r} is not a recognized voice. "
                 f"Use a built-in voice (case-insensitive): "
                 f"{', '.join(SUPPORTED_VOICES)} — "
-                f"or a custom voice ID (8 lowercase alphanumeric chars), "
+                f"or a custom voice ID (8 chars for console presets, "
+                f"12 chars for custom clones, all lowercase alphanumeric), "
                 f"created via xAI's Custom Voices API: "
                 f"https://docs.x.ai/developers/model-capabilities/audio/voice"
             )
