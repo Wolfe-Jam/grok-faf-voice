@@ -5,6 +5,45 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-05-11 — Sessionless MCP co-existence (X-MCP-Mode: flexi)
+
+Hotfix for mcpaas-cf upstream Sessionless MCP compliance (SEP-2567 + SEP-2575).
+mcpaas.live/mcp now defaults to 'strict' mode — requires Mcp-Method +
+MCP-Protocol-Version headers on every request. `fastmcp.Client(URL)` doesn't
+send these by default, so `FAFMemory.etch()` and `FAFMemory.get()` would 400
+against the live endpoint once mcpaas-cf deploys.
+
+This release wraps the underlying fastmcp `Client` with an explicit
+`StreamableHttpTransport(headers={"X-MCP-Mode": "flexi"})`, opting into
+mcpaas-cf's co-existence mode (validate headers when present, accept when
+absent). Behavior of `FAFMemory` is unchanged; the wire just carries one
+additional header now.
+
+### Fixed
+
+- **`FAFMemory.etch()` and `FAFMemory.get()`** now construct an explicit
+  `StreamableHttpTransport` with `X-MCP-Mode: flexi` header. Without this,
+  mcpaas-cf strict-default rejects the call with `400 -32001 HeaderMismatch`.
+- Companion fix in `faf-agent-mcp` v0.1.4.
+
+### Added
+
+- 3 WJTTC Test Shadow assertions in `tests/test_memory.py`.
+
+### Verified
+
+- 65/65 tests passing (62 existing + 3 new mode-header).
+- Live smoke: `FAFMemory.get("grok")` returns soul body against local
+  strict-default mcpaas-cf (wrangler dev :8787).
+
+### Doctrine
+
+When `fastmcp` upstream ships full spec-header support (Mcp-Method,
+MCP-Protocol-Version), the `X-MCP-Mode: flexi` opt-in can be dropped.
+Until then, this is the bridge.
+
+---
+
 ## [0.2.1] — 2026-05-03 — Custom clone voice ID support
 
 Hotfix for v0.2.0. v0.2.0's validator enforced "exactly 8 chars" per
