@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 
 from grok_faf_voice._merge_models import (
@@ -39,6 +40,16 @@ if TYPE_CHECKING:
 
 MCPAAS_URL = "https://mcpaas.live/mcp"
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
+
+# 2026-05-11: mcpaas-cf upstream flipped to strict-default Sessionless MCP per
+# SEP-2567 + SEP-2575. fastmcp.Client(URL) doesn't send the now-required spec
+# headers (Mcp-Method, MCP-Protocol-Version). To preserve back-compat, we
+# construct an explicit StreamableHttpTransport carrying X-MCP-Mode: flexi —
+# opts into mcpaas-cf's co-existence mode (validate headers when present,
+# accept when absent). Drop when fastmcp upstream ships full spec-header support.
+# Audit: PLANET-FAF/IMCP/audit-mcpaas-mcp-state-2026-05-11.md
+# Doctrine: memory/mcpaas-coexistence-strict-default-x-mcp-mode.md
+_MCPAAS_MODE_HEADER = {"X-MCP-Mode": "flexi"}
 # Reasoning variant — same price as non-reasoning, judgment-grade for
 # memory consolidation. The reasoning trace dramatically improves
 # recency vs importance, emotional weight, and over-consolidation calls.
@@ -247,8 +258,10 @@ class FAFMemory:
         if tags:
             args["tags"] = tags
 
+        # Sessionless MCP compat (2026-05-11): explicit transport with flexi header.
+        transport = StreamableHttpTransport(url=self._mcp_url, headers=_MCPAAS_MODE_HEADER)
         try:
-            async with Client(self._mcp_url) as client:
+            async with Client(transport) as client:
                 result = await client.call_tool("write_soul", args)
                 text = _first_text(result)
         except ToolError as e:
@@ -267,8 +280,10 @@ class FAFMemory:
         preamble before the first `\\n---\\n` separator; downstream
         consumers can split if they want only the YAML body.
         """
+        # Sessionless MCP compat (2026-05-11): explicit transport with flexi header.
+        transport = StreamableHttpTransport(url=self._mcp_url, headers=_MCPAAS_MODE_HEADER)
         try:
-            async with Client(self._mcp_url) as client:
+            async with Client(transport) as client:
                 result = await client.call_tool("get_soul", {"soul": self._soul})
                 return _first_text(result)
         except ToolError as e:

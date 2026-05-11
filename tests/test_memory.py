@@ -1796,3 +1796,56 @@ async def test_etch_paralinguistic_round_trip():
 
     summary = await mem.paralinguistic_summary(max_recent=20)
     assert marker_value in summary
+
+
+# ─── Sessionless MCP co-existence (2026-05-11) ─────────────────────────
+# mcpaas-cf upstream flipped to strict-default Sessionless MCP.
+# fastmcp.Client(URL) doesn't send the now-required spec headers, so
+# FAFMemory must construct an explicit StreamableHttpTransport with
+# X-MCP-Mode: flexi to opt into mcpaas-cf co-existence mode.
+
+
+def test_mcpaas_mode_header_constant():
+    """X-MCP-Mode: flexi is the co-existence opt-in header."""
+    from grok_faf_voice.memory import _MCPAAS_MODE_HEADER
+
+    assert _MCPAAS_MODE_HEADER == {"X-MCP-Mode": "flexi"}
+
+
+def test_faf_memory_etch_uses_explicit_transport_with_mode_header():
+    """FAFMemory.etch must wrap Client() with StreamableHttpTransport carrying
+    the flexi mode header. Without this, mcpaas-cf strict-default rejects
+    the call with 400 -32001 HeaderMismatch.
+
+    Source-inspection assertion (cheap, no network).
+    """
+    import inspect
+
+    from grok_faf_voice.memory import FAFMemory
+
+    src = inspect.getsource(FAFMemory.etch)
+    assert "StreamableHttpTransport" in src, (
+        "etch() must use StreamableHttpTransport (strict-default mcpaas-cf "
+        "rejects bare Client(URL))"
+    )
+    assert "_MCPAAS_MODE_HEADER" in src, (
+        "etch() must inject _MCPAAS_MODE_HEADER (X-MCP-Mode: flexi)"
+    )
+
+
+def test_faf_memory_get_uses_explicit_transport_with_mode_header():
+    """FAFMemory.get (recall) must wrap Client() with StreamableHttpTransport
+    carrying the flexi mode header. Same constraint as etch.
+    """
+    import inspect
+
+    from grok_faf_voice.memory import FAFMemory
+
+    src = inspect.getsource(FAFMemory.get)
+    assert "StreamableHttpTransport" in src, (
+        "get() must use StreamableHttpTransport (strict-default mcpaas-cf "
+        "rejects bare Client(URL))"
+    )
+    assert "_MCPAAS_MODE_HEADER" in src, (
+        "get() must inject _MCPAAS_MODE_HEADER (X-MCP-Mode: flexi)"
+    )
