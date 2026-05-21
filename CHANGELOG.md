@@ -5,6 +5,41 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-05-21 — Local souls: read/write `.fafm` off disk (no MCPaaS)
+
+Adds a local-first path to `FAFMemory`: read and write `.fafm` documents
+straight off disk — no MCPaaS, no API key. The companion to the MCPaaS-backed
+constructor, and the capability that powers cross-vendor interop (loading souls
+written by other FAF-family tools, e.g. a Claude-side knowledge soul).
+
+Purely additive and backward-compatible: `local_path` defaults to `None`, so
+existing MCPaaS behavior is unchanged.
+
+### Added
+
+- **`FAFMemory.from_file(path)`** (classmethod) — load a soul from a local
+  `.fafm` file into a `FAFMemory` in local mode. Extracts the soul identifier
+  from the document's `namepoint` via a lightweight regex (no new YAML
+  dependency). Works with any profile (`voice` or `knowledge`).
+- **`FAFMemory.to_file(path)`** — write the current soul body to a local
+  `.fafm` file (byte-identical roundtrip with `from_file`). Handy for backups,
+  inspection, or handing a soul to another tool.
+- **`local_path` constructor param** — when set, `get()` reads from disk
+  instead of MCPaaS. Defaults to `None` (MCPaaS).
+
+### Why
+
+Cross-vendor memory interop: a `.fafm` soul written by Claude-side tooling
+(knowledge profile, per `application/vnd.fafm+yaml` v1.1) loads cleanly via
+`from_file()` → `get()` → `recall_for_prompt()`, offline. The recall path's
+"no `\n---\n` separator → use whole text" leniency means pure-YAML `.fafm`
+documents flow through with no special-casing.
+
+### Fixed
+
+- Version coherence: `__init__.__version__` (was 0.2.1) and `pyproject.toml`
+  (was 0.2.2) now both report 0.3.0.
+
 ## [0.2.2] — 2026-05-11 — Sessionless MCP co-existence (X-MCP-Mode: flexi)
 
 Hotfix for mcpaas-cf upstream Sessionless MCP compliance (SEP-2567 + SEP-2575).

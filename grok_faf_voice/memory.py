@@ -18,6 +18,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -166,10 +168,14 @@ class FAFMemory:
         mcp_url: str = MCPAAS_URL,
         ledger: VoiceSessionLedger | None = None,
         bus: ContextBus | None = None,
+        local_path: str | Path | None = None,
     ) -> None:
         self._soul = soul
         self._api_key = api_key or os.environ.get("MCPAAS_API_KEY")
         self._mcp_url = mcp_url
+        # Local mode: when set (via from_file), reads/writes a .fafm on disk
+        # instead of MCPaaS — no API key required. None => MCPaaS (default).
+        self._local_path = Path(local_path) if local_path is not None else None
         self._scratchpad = Scratchpad()
         self.ledger: VoiceSessionLedger = ledger or NullVoiceSessionLedger()
         # Context Bus — async pub/sub for voice-memory events. Created
@@ -274,12 +280,19 @@ class FAFMemory:
         return text
 
     async def get(self) -> str:
-        """Read the soul's current state via MCPaaS get_soul.
+        """Read the soul's current state.
 
-        Returns the soul body as a string. Includes the server's
-        preamble before the first `\\n---\\n` separator; downstream
-        consumers can split if they want only the YAML body.
+        In **local mode** (constructed via :meth:`from_file`) this reads the
+        ``.fafm`` document straight off disk — no MCPaaS, no API key.
+        Otherwise it reads via MCPaaS ``get_soul``.
+
+        Returns the soul body as a string. The MCPaaS path includes the
+        server's preamble before the first `\\n---\\n` separator; downstream
+        consumers can split if they want only the YAML body. The local path
+        returns the file's exact contents.
         """
+        if self._local_path is not None:
+            return self._local_path.read_text(encoding="utf-8")
         # Sessionless MCP compat (2026-05-11): explicit transport with flexi header.
         transport = StreamableHttpTransport(url=self._mcp_url, headers=_MCPAAS_MODE_HEADER)
         try:
@@ -288,6 +301,58 @@ class FAFMemory:
                 return _first_text(result)
         except ToolError as e:
             raise self._wrap_tool_error(e, op="recall") from e
+
+    @classmethod
+    def from_file(cls, path: str | Path, **kwargs: Any) -> FAFMemory:
+        """Load a soul from a local ``.fafm`` file — no MCPaaS, no API key.
+
+        The local-first companion to the MCPaaS-backed constructor. Reads a
+        ``.fafm`` document straight off disk so you can inspect, test, or run
+        recall against a soul offline — including souls written by other
+        FAF-family tools (cross-vendor interop). Works with any profile
+        (``voice`` or ``knowledge``).
+
+        Pairs with :meth:`to_file` for a byte-identical roundtrip. Validate
+        documents against the published JSON Schema (``schemas/fafm.schema.json``
+        in the ``faf`` repo) for editor/CI DX.
+
+        Examples
+        --------
+        >>> mem = FAFMemory.from_file("claude-code-wolfejam.fafm")
+        >>> body = await mem.get()                  # the file's soul body
+        >>> recall = await mem.recall_for_prompt()  # ready for the prompt
+
+        Parameters
+        ----------
+        path : str | Path
+            Path to a ``.fafm`` document.
+        **kwargs
+            Forwarded to ``__init__`` (e.g. ``ledger=``, ``bus=``).
+
+        Returns
+        -------
+        FAFMemory
+            An instance in local mode — ``get()`` reads the file, not MCPaaS.
+        """
+        p = Path(path)
+        text = p.read_text(encoding="utf-8")
+        # Lightweight soul-identifier extraction (no YAML dependency).
+        m = re.search(r"(?m)^namepoint:\s*['\"]?(@[^'\"\n]+?)['\"]?\s*$", text)
+        soul = m.group(1).strip() if m else p.stem
+        return cls(soul, local_path=p, **kwargs)
+
+    async def to_file(self, path: str | Path) -> Path:
+        """Write the current soul body to a local ``.fafm`` file.
+
+        The inverse of :meth:`from_file`. Fetches the soul (local or MCPaaS)
+        and writes it to disk — handy for backups, inspection, or handing a
+        soul to another FAF-family tool. Returns the written path.
+
+        >>> path = await mem.to_file("backup.fafm")
+        """
+        p = Path(path)
+        p.write_text(await self.get(), encoding="utf-8")
+        return p
 
     def _wrap_tool_error(
         self, exc: ToolError, *, op: str

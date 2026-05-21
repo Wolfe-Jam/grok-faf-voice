@@ -81,6 +81,29 @@ work too — paste the `voice_id` and go.
 
 ---
 
+## Local souls (`.fafm` files)
+
+Read and write souls straight off disk — no MCPaaS, no API key. Great for
+inspection, tests, backups, and loading souls written by other FAF-family
+tools (cross-vendor interop).
+
+```python
+from grok_faf_voice import FAFMemory
+
+# Load a .fafm soul from disk (any profile — voice or knowledge)
+mem = FAFMemory.from_file("soul.fafm")
+body   = await mem.get()                  # the soul body
+recall = await mem.recall_for_prompt()    # ready for the prompt
+
+# Write it back out (byte-identical roundtrip)
+await mem.to_file("backup.fafm")
+```
+
+`.fafm` is the IANA-registered FAF Memory format (`application/vnd.fafm+yaml`).
+Validate documents against the published [JSON Schema](https://github.com/Wolfe-Jam/faf/blob/main/schemas/fafm.schema.json).
+
+---
+
 ## Want more?
 
 | | |
