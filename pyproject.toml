@@ -1,6 +1,6 @@
 [project]
 name = "grok-faf-voice"
-version = "0.3.0"
+version = "0.3.1"
 description = "grok-faf-voice | VML • Voice Memory Layer for Grok • Persistent across sessions, devices, models • LiveKit-enabled"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,6 +49,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "fastmcp>=3.2",
     "pydantic>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

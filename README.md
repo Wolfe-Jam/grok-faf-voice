@@ -97,6 +97,11 @@ recall = await mem.recall_for_prompt()    # ready for the prompt
 
 # Write it back out (byte-identical roundtrip)
 await mem.to_file("backup.fafm")
+
+# Typed views — no manual parsing (v0.3.1)
+mem.profile    # "voice" | "knowledge"
+mem.facts      # parsed list of memory facts
+mem.index      # top-level index (knowledge profile)
 ```
 
 `.fafm` is the IANA-registered FAF Memory format (`application/vnd.fafm+yaml`).

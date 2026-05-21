@@ -184,3 +184,82 @@ async def test_cross_vendor_read_claude_knowledge_soul(knowledge_soul_path):
         recall = await mem.recall_for_prompt()
     assert "precision-is-power" in recall  # rich-fact id present in body
     assert "named tiers" in recall  # index hook present
+
+
+# --- parsed accessors: .facts / .profile / .index (v0.3.1) ----------------
+
+def test_profile_accessor_knowledge(knowledge_soul_path):
+    """`.profile` returns the document's profile (local mode, no await)."""
+    mem = FAFMemory.from_file(knowledge_soul_path)
+    assert mem.profile == "knowledge"
+
+
+def test_profile_accessor_voice(voice_soul_path):
+    mem = FAFMemory.from_file(voice_soul_path)
+    assert mem.profile == "voice"
+
+
+def test_profile_defaults_to_voice_when_absent(tmp_path):
+    """No `profile:` key → defaults to 'voice' (back-compat)."""
+    p = tmp_path / "np.fafm"
+    p.write_text("version: '1.1'\nnamepoint: '@x'\nmemory:\n  facts: []\n")
+    mem = FAFMemory.from_file(p)
+    assert mem.profile == "voice"
+
+
+def test_facts_accessor_parses_list(knowledge_soul_path):
+    """`.facts` returns the parsed facts list with rich fields intact."""
+    mem = FAFMemory.from_file(knowledge_soul_path)
+    facts = mem.facts
+    assert isinstance(facts, list) and len(facts) == 1
+    assert facts[0]["id"] == "precision-is-power"
+    assert facts[0]["type"] == "feedback"
+    assert facts[0]["text"].startswith("Replace lossy umbrella terms")
+
+
+def test_facts_accessor_handles_mixed_voice_forms(voice_soul_path):
+    """Voice facts mix bare strings and {text, tags} objects."""
+    mem = FAFMemory.from_file(voice_soul_path)
+    facts = mem.facts
+    assert facts[0] == "User prefers short answers"  # bare string
+    assert facts[1]["text"] == "User's name is Alex"  # object form
+
+
+def test_index_accessor(knowledge_soul_path):
+    """`.index` returns the top-level index list (knowledge profile)."""
+    mem = FAFMemory.from_file(knowledge_soul_path)
+    assert mem.index == ["precision-is-power — named tiers beat umbrella terms"]
+
+
+def test_index_empty_when_absent(voice_soul_path):
+    """Voice soul has no index → empty list, not an error."""
+    mem = FAFMemory.from_file(voice_soul_path)
+    assert mem.index == []
+
+
+def test_accessors_work_without_await_in_local_mode(knowledge_soul_path):
+    """Local mode parses the file directly — no `await get()` needed first.
+    This is the exact ergonomic Grok's verification script reaches for."""
+    mem = FAFMemory.from_file(knowledge_soul_path)
+    assert mem.profile == "knowledge"
+    assert len(mem.facts) == 1
+    assert len(mem.index) == 1
+
+
+def test_accessors_raise_clear_error_in_mcpaas_mode_before_get():
+    """MCPaaS mode with no prior get() → clear FAFRecallError, not AttributeError."""
+    from grok_faf_voice.memory import FAFRecallError
+
+    mem = FAFMemory("grok")  # MCPaaS mode, nothing fetched
+    with pytest.raises(FAFRecallError):
+        _ = mem.facts
+
+
+def test_strips_mcpaas_preamble_before_parsing(knowledge_soul_path):
+    """If the cached soul text carries an MCPaaS preamble, accessors parse the
+    body after the first '\\n---\\n' (mirrors recall_for_prompt)."""
+    body = knowledge_soul_path.read_text(encoding="utf-8")
+    mem = FAFMemory("grok")
+    mem._cache = f"server preamble line\n---\n{body}"
+    assert mem.profile == "knowledge"
+    assert mem.facts[0]["id"] == "precision-is-power"

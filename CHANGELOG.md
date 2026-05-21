@@ -5,6 +5,32 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-05-21 — Parsed accessors: `.facts` / `.profile` / `.index`
+
+Typed views over a loaded soul, so you don't have to parse the YAML yourself.
+Companion to v0.3.0's local souls — makes inspecting a soul (especially a
+cross-vendor knowledge soul) a one-liner.
+
+### Added
+
+- **`FAFMemory.profile`** — the soul's profile (`"voice"` default | `"knowledge"`).
+- **`FAFMemory.facts`** — the parsed `memory.facts` list (bare strings,
+  `{text, tags?}`, or rich knowledge objects — per the `.fafm` spec).
+- **`FAFMemory.index`** — the top-level `index` list (knowledge profile).
+
+Lazy + cached: local mode (`from_file`) parses the file directly with no
+`await`; MCPaaS mode reads the cache populated by a prior `await get()` (raises
+`FAFRecallError` with a clear message if called before any read). The MCPaaS
+server preamble (before the first `\n---\n`) is stripped before parsing,
+mirroring `recall_for_prompt`.
+
+### Changed
+
+- `get()` now caches the soul text it returns (local + MCPaaS) so the accessors
+  don't re-fetch.
+- **`pyyaml>=6.0`** is now a declared direct dependency (was transitive). The
+  accessors parse soul YAML; relying on a transitive dep was silent-drift risk.
+
 ## [0.3.0] — 2026-05-21 — Local souls: read/write `.fafm` off disk (no MCPaaS)
 
 Adds a local-first path to `FAFMemory`: read and write `.fafm` documents

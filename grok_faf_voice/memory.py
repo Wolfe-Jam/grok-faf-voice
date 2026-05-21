@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import yaml
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
@@ -176,6 +177,9 @@ class FAFMemory:
         # Local mode: when set (via from_file), reads/writes a .fafm on disk
         # instead of MCPaaS — no API key required. None => MCPaaS (default).
         self._local_path = Path(local_path) if local_path is not None else None
+        # Cached soul text from the last get() (or a direct local read), so the
+        # parsed accessors (.facts / .profile / .index) don't re-fetch.
+        self._cache: str | None = None
         self._scratchpad = Scratchpad()
         self.ledger: VoiceSessionLedger = ledger or NullVoiceSessionLedger()
         # Context Bus — async pub/sub for voice-memory events. Created
@@ -292,13 +296,17 @@ class FAFMemory:
         returns the file's exact contents.
         """
         if self._local_path is not None:
-            return self._local_path.read_text(encoding="utf-8")
+            text = self._local_path.read_text(encoding="utf-8")
+            self._cache = text
+            return text
         # Sessionless MCP compat (2026-05-11): explicit transport with flexi header.
         transport = StreamableHttpTransport(url=self._mcp_url, headers=_MCPAAS_MODE_HEADER)
         try:
             async with Client(transport) as client:
                 result = await client.call_tool("get_soul", {"soul": self._soul})
-                return _first_text(result)
+                text = _first_text(result)
+                self._cache = text
+                return text
         except ToolError as e:
             raise self._wrap_tool_error(e, op="recall") from e
 
@@ -353,6 +361,59 @@ class FAFMemory:
         p = Path(path)
         p.write_text(await self.get(), encoding="utf-8")
         return p
+
+    # -- parsed accessors -------------------------------------------------
+    # Typed views over the soul document. Local mode parses the file
+    # directly (no await needed); MCPaaS mode reads the cache populated by a
+    # prior `await get()`.
+
+    def _parse_soul(self) -> dict[str, Any]:
+        text = self._cache
+        if text is None:
+            if self._local_path is not None:
+                text = self._local_path.read_text(encoding="utf-8")
+                self._cache = text
+            else:
+                raise FAFRecallError(
+                    "No soul loaded yet — call `await get()` first (MCPaaS mode), "
+                    "or use `FAFMemory.from_file(path)` for local access."
+                )
+        # Strip the MCPaaS server preamble (everything before the first
+        # `\n---\n`) if present, mirroring recall_for_prompt.
+        sep = "\n---\n"
+        if sep in text:
+            text = text.split(sep, 1)[1]
+        try:
+            doc = yaml.safe_load(text)
+        except yaml.YAMLError as e:
+            raise FAFRecallError(f"Soul is not valid YAML: {e}") from e
+        return doc if isinstance(doc, dict) else {}
+
+    @property
+    def profile(self) -> str:
+        """The soul's profile — ``"voice"`` (default) or ``"knowledge"``.
+
+        Parsed lazily from the soul document. Local mode reads the file;
+        MCPaaS mode needs a prior ``await get()``.
+        """
+        return self._parse_soul().get("profile", "voice")
+
+    @property
+    def facts(self) -> list[Any]:
+        """The soul's memory facts (parsed). Empty list if none.
+
+        Items are whatever the document holds — a bare string, a
+        ``{text, tags?}`` object, or a rich knowledge object — per the
+        ``.fafm`` spec. Local mode parses the file directly; MCPaaS mode
+        needs a prior ``await get()``.
+        """
+        memory = self._parse_soul().get("memory") or {}
+        return memory.get("facts") or []
+
+    @property
+    def index(self) -> list[Any]:
+        """The soul's top-level ``index`` (knowledge profile). Empty if none."""
+        return self._parse_soul().get("index") or []
 
     def _wrap_tool_error(
         self, exc: ToolError, *, op: str
