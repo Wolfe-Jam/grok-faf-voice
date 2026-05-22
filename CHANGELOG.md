@@ -5,6 +5,14 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-05-22 — Sibling cross-link
+
+Two profiles, one `.fafm` format — the voice and knowledge reference
+implementations now point at each other.
+
+### Changed
+- README + pyproject: cross-link [claude-fafm-sdk](https://pypi.org/project/claude-fafm-sdk/) (the knowledge profile). First PyPI release to carry the 0.3.0 (local souls / cross-vendor read) and 0.3.1 (parsed accessors) work — PyPI was last at 0.2.2.
+
 ## [0.3.1] — 2026-05-21 — Parsed accessors: `.facts` / `.profile` / `.index`
 
 Typed views over a loaded soul, so you don't have to parse the YAML yourself.
