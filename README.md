@@ -126,5 +126,5 @@ Validate documents against the published [JSON Schema](https://github.com/Wolfe-
 
 > **We are the Open-Ended answer to Voice memory, and don't you Forget It. We won't.**
 
-`.fafm 🐘🎙️` · `application/vnd.fafm+yaml` (IANA registration planned)
+`.fafm 🐘🎙️` · `application/vnd.fafm+yaml` (IANA registered)
 · part of the [FAF.one](https://faf.one) family · MIT licensed
