@@ -9,6 +9,10 @@
 
 The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled.
 
+> **Two profiles, one `.fafm` format.** This is the **voice** profile (the Voice
+> Memory Layer). For the **knowledge** profile — typed, cross-linked agent memory —
+> see [claude-fafm-sdk](https://pypi.org/project/claude-fafm-sdk/).
+
 ---
 
 ## The Fast⚡️AF memory setup
