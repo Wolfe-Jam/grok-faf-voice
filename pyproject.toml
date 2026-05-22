@@ -67,7 +67,7 @@ Homepage = "https://github.com/Wolfe-Jam/grok-faf-voice"
 Repository = "https://github.com/Wolfe-Jam/grok-faf-voice"
 Changelog = "https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/CHANGELOG.md"
 Issues = "https://github.com/Wolfe-Jam/grok-faf-voice/issues"
-"Knowledge profile (claude-fafm-sdk)" = "https://pypi.org/project/claude-fafm-sdk/"
+"claude-fafm-sdk (knowledge)" = "https://pypi.org/project/claude-fafm-sdk/"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
