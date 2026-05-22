@@ -122,6 +122,28 @@ Validate documents against the published [JSON Schema](https://github.com/Wolfe-
 | Source + issues | [github.com/Wolfe-Jam/grok-faf-voice](https://github.com/Wolfe-Jam/grok-faf-voice) |
 | Contribute | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 
+## Citation
+
+If you use `grok-faf-voice` or the `.fafm` format in research or production, please cite the format paper:
+
+> Wolfe, J. (2026). *Permanent Memory and Instant Recall: The .fafm Standard for Multi-Profile AI Agent Memory*. Zenodo. https://doi.org/10.5281/zenodo.20348942
+
+### BibTeX
+
+```bibtex
+@article{wolfe2026fafm,
+  title     = {Permanent Memory and Instant Recall: The .fafm Standard for Multi-Profile AI Agent Memory},
+  author    = {Wolfe, James},
+  year      = {2026},
+  month     = {may},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20348942},
+  url       = {https://doi.org/10.5281/zenodo.20348942}
+}
+```
+
+**DOI:** [`10.5281/zenodo.20348942`](https://doi.org/10.5281/zenodo.20348942)
+
 ---
 
 > **We are the Open-Ended answer to Voice memory, and don't you Forget It. We won't.**
