@@ -12,6 +12,7 @@ implementations now point at each other.
 
 ### Changed
 - README + pyproject: cross-link [claude-fafm-sdk](https://pypi.org/project/claude-fafm-sdk/) (the knowledge profile). First PyPI release to carry the 0.3.0 (local souls / cross-vendor read) and 0.3.1 (parsed accessors) work — PyPI was last at 0.2.2.
+- README: Zenodo DOI badge + citation/BibTeX for the `.fafm` paper ([10.5281/zenodo.20348942](https://doi.org/10.5281/zenodo.20348942)); tagline now "IANA registered".
 
 ## [0.3.1] — 2026-05-21 — Parsed accessors: `.facts` / `.profile` / `.index`
 
