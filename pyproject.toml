@@ -58,6 +58,8 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
+    "types-PyYAML>=6.0",
+    "mypy>=1.0",
     "build>=1.2",
     "twine>=5.0",
 ]
@@ -101,3 +103,12 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+exclude = ["dist/", "build/", ".venv/", "tests/", "examples/"]
+
+[[tool.mypy.overrides]]
+module = ["livekit.*", "openai.*"]
+ignore_missing_imports = true

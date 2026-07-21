@@ -305,8 +305,9 @@ def _wrap_tool_with_bus(tool: Any, bus: ContextBus) -> Any:
         return tool
 
     original = tool._func
-    tool_name = getattr(getattr(tool, "info", None), "name", None) or getattr(
-        original, "__name__", "unknown_tool"
+    tool_name = str(
+        getattr(getattr(tool, "info", None), "name", None)
+        or getattr(original, "__name__", "unknown_tool")
     )
 
     @wraps(original)
@@ -364,4 +365,4 @@ def enable_global_tool_bus(memory: FAFMemory, agent: Agent) -> None:
             await original_update(tools)
 
         agent.update_tools = _wrapped_update_tools  # type: ignore[method-assign]
-        agent._bus_update_tools_patched = True
+        agent._bus_update_tools_patched = True  # type: ignore[attr-defined]
