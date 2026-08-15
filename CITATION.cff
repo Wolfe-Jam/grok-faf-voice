@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 type: software
-message: "If you use grok-faf-voice or the .fafm format in your work, please cite the paper in `preferred-citation` below."
+message: "If you use grok-faf-voice or the .fafm format in your work, please cite the paper in `preferred-citation`. The Agents paper in `references` is the companion for the agentic era."
 title: "grok-faf-voice — Voice Memory Layer (VML) reference implementation for .fafm"
 authors:
   - family-names: Wolfe
@@ -31,3 +31,17 @@ preferred-citation:
   url: "https://doi.org/10.5281/zenodo.20348942"
   publisher:
     name: "Zenodo"
+references:
+  - type: article
+    title: "Why Agents Need a Passport: .fafa — Portable Identity for the Agentic Era"
+    authors:
+      - family-names: Wolfe
+        given-names: James
+        orcid: "https://orcid.org/0009-0007-0801-3841"
+        affiliation: "FAF Foundation"
+    year: 2026
+    month: 8
+    doi: 10.5281/zenodo.21951641
+    url: "https://doi.org/10.5281/zenodo.21951641"
+    publisher:
+      name: "Zenodo"

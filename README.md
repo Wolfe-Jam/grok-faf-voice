@@ -2,6 +2,7 @@
 
 [![IANA: vnd.fafm+yaml](https://img.shields.io/badge/IANA-vnd.fafm%2Byaml-00D4D4)](https://www.iana.org/assignments/media-types/application/vnd.fafm+yaml)
 [![DOI: Memory paper](https://img.shields.io/badge/DOI-Memory%20paper-FF6B35)](https://doi.org/10.5281/zenodo.20348942)
+[![DOI: Agents paper](https://img.shields.io/badge/DOI-Agents%20paper-FF6B35)](https://doi.org/10.5281/zenodo.21951641)
 
 **Home:** [faf.one/voice](https://faf.one/voice)
 **Live demo:** [faf-voice.vercel.app](https://faf-voice.vercel.app)
@@ -130,9 +131,11 @@ Validate documents against the published [JSON Schema](https://github.com/Wolfe-
 
 ## Citation
 
-If you use `grok-faf-voice` or the `.fafm` format in research or production, please cite the format paper:
+If you use `grok-faf-voice` or the `.fafm` format in research or production, please cite the format paper. The Agents paper is the companion for the agentic era:
 
 > Wolfe, J. (2026). *Permanent Memory and Instant Recall: The .fafm Standard for Multi-Profile AI Agent Memory*. Zenodo. https://doi.org/10.5281/zenodo.20348942
+
+> Wolfe, J. (2026). *Why Agents Need a Passport: .fafa — Portable Identity for the Agentic Era*. Zenodo. https://doi.org/10.5281/zenodo.21951641
 
 ### BibTeX
 
@@ -146,9 +149,19 @@ If you use `grok-faf-voice` or the `.fafm` format in research or production, ple
   doi       = {10.5281/zenodo.20348942},
   url       = {https://doi.org/10.5281/zenodo.20348942}
 }
+
+@article{wolfe2026fafa,
+  title     = {Why Agents Need a Passport: .fafa — Portable Identity for the Agentic Era},
+  author    = {Wolfe, James},
+  year      = {2026},
+  month     = {aug},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21951641},
+  url       = {https://doi.org/10.5281/zenodo.21951641}
+}
 ```
 
-**DOI:** [`10.5281/zenodo.20348942`](https://doi.org/10.5281/zenodo.20348942)
+**DOI:** [`10.5281/zenodo.20348942`](https://doi.org/10.5281/zenodo.20348942) (.fafm) · [`10.5281/zenodo.21951641`](https://doi.org/10.5281/zenodo.21951641) (.fafa)
 
 ---
 
