@@ -47,8 +47,8 @@ dependencies = [
     "livekit-agents[xai]>=1.4",
     "httpx>=0.28",
     "python-dotenv>=1.0",
-    "fastmcp>=3.2",
-    "pydantic>=2.0",
+    "fastmcp>=4.0.0",
+    "pydantic>=2.12",
     "pyyaml>=6.0",
 ]
 
