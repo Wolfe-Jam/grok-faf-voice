@@ -22,6 +22,15 @@ The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled
 
 ---
 
+## What's New in v0.4.0 — FastMCP 4
+
+`fastmcp` floor moves to `>=4.0.0` — the FAF Python family standard. No API change:
+the MCPaaS client pattern (`Client` + `StreamableHttpTransport` + `except ToolError`)
+is unchanged on 4.x, and grok's own `httpx` calls (xAI / ElevenLabs / transcribe)
+are untouched. `pydantic>=2.12` follows FastMCP 4's floor. 196 tests green.
+
+---
+
 ## The Fast⚡️AF memory setup
 
 ```bash

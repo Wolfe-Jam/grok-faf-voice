@@ -5,6 +5,23 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-09-07 — FastMCP 4
+
+`fastmcp` floor moves to `>=4.0.0` — the FAF Python family standard.
+
+### Changed
+- **`fastmcp>=4.0.0`** (was `>=3.2`). FastMCP 4 is Prefect-owned and extras-split
+  (`fastmcp` → `fastmcp-slim[client,server]`). No API change here: the
+  `Client` + `StreamableHttpTransport` + `except ToolError` pattern in
+  `memory.py` is unchanged, and the MCPaaS `get_soul` / `write_soul` calls are
+  plain reads/writes (no session state, `on_initialize`, or `ctx.elicit()`), so
+  FastMCP 4's `mode="auto"` default is fine. `httpx` here is grok's own (xAI /
+  ElevenLabs / transcribe) and never wraps a fastmcp `Client`, so the
+  `httpx` → `httpx2` swap is a non-event.
+- **`pydantic>=2.12`** (was `>=2.0`) — FastMCP 4's floor.
+
+196 passing, 4 skipped · ruff + mypy clean on `fastmcp 4.0.3`.
+
 ## [0.3.2] — 2026-05-22 — Sibling cross-link
 
 Two profiles, one `.fafm` format — the voice and knowledge reference
