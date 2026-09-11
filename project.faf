@@ -1,0 +1,49 @@
+faf_version: "3.0"
+project:
+  name: grok-faf-voice
+  goal: Persistent Soul State for Grok Voice — FAF-powered eternal memory via LiveKit cascaded pipeline.
+  main_language: Python
+  type: sdk
+stack:
+  frontend: slotignored
+  css_framework: slotignored
+  ui_library: slotignored
+  state_management: slotignored
+  backend: slotignored
+  api_type: slotignored
+  runtime: slotignored
+  database: slotignored
+  connection: slotignored
+  hosting: slotignored
+  build: slotignored
+  cicd: slotignored
+  monorepo_tool: slotignored
+  package_manager: slotignored
+  workspaces: slotignored
+  admin: slotignored
+  cache: slotignored
+  search: slotignored
+  storage: slotignored
+human_context:
+  who: Devs building voice AI agents on LiveKit + xAI Grok who need persistent memory across sessions, devices, and model switches. FAF ecosystem builders extending the soul-state pattern to voice.
+  what: A Python SDK that adds persistent memory — the Voice Memory Layer — to any LiveKit + Grok Voice agent. One import, drop-in. FAF-powered. Companion to grok-faf-mcp (context layer) and FAF-Voice (multi-model frontend).
+  why: Voice AI agents forget everything. grok-faf-voice fixes that. Grok calls it eternal soul state. Memory survives sessions, devices, model switches, even reinstalls.
+  where: "Public repo: github.com/Wolfe-Jam/grok-faf-voice. Runtime: anywhere LiveKit Agents runs. Persistence: MCPaaS at grok-faf-mcp.vercel.app under application/vnd.faf+yaml (IANA-registered)."
+  when: Born April 26, 2026. From the Makers of grok-faf-mcp (Grok's first ever MCP). 60-90 day high-conviction window confirmed by xAI engagement signal.
+  how: AgentServer + @rtc_session canonical LiveKit pattern. FAFContext loads .faf via MCPaaS, injects into xai.realtime.RealtimeModel system prompt. Voice Memory Layer adds Scratchpad, Paralinguistic Tags, Smart Merge, Session Ledger, Real-time Context Bus on top. Default model grok-voice-think-fast-1.0 (Track A); grok-4-1-fast-non-reasoning available (Track B / hands-on).
+monorepo:
+  packages_count: slotignored
+  build_orchestrator: slotignored
+  versioning_strategy: slotignored
+  shared_configs: slotignored
+  remote_cache: slotignored
+sdk:
+  distribution: PyPI
+  language_runtime: Python 3.10+
+  target_consumers: LiveKit + Grok Voice devs
+  public_api_surface: FAFContext, Persona, Brief, Etcher
+  version_strategy: semver
+  auth_model: xAI API key + LiveKit token
+  dependencies_critical: livekit-agents[xai], httpx, python-dotenv
+  test_framework: pytest
+  docs_format: Markdown + examples/

@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .env
-*.faf
 livekit-*.log
 dist/
 build/
