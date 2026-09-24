@@ -30,7 +30,7 @@ human_context:
   why: Voice AI agents forget everything. grok-faf-voice fixes that. Grok calls it eternal soul state. Memory survives sessions, devices, model switches, even reinstalls.
   where: "Public repo: github.com/Wolfe-Jam/grok-faf-voice. Runtime: anywhere LiveKit Agents runs. Persistence: MCPaaS at grok-faf-mcp.vercel.app under application/vnd.faf+yaml (IANA-registered)."
   when: Born April 26, 2026. From the Makers of grok-faf-mcp (Grok's first ever MCP). 60-90 day high-conviction window confirmed by xAI engagement signal.
-  how: AgentServer + @rtc_session canonical LiveKit pattern. FAFContext loads .faf via MCPaaS, injects into xai.realtime.RealtimeModel system prompt. Voice Memory Layer adds Scratchpad, Paralinguistic Tags, Smart Merge, Session Ledger, Real-time Context Bus on top. Default model grok-voice-think-fast-1.0 (Track A); grok-4-1-fast-non-reasoning available (Track B / hands-on).
+  how: AgentServer + @rtc_session canonical LiveKit pattern. FAFContext loads .faf via MCPaaS, injects into xai.realtime.RealtimeModel system prompt. Voice Memory Layer adds Scratchpad, Paralinguistic Tags, Smart Merge, Session Ledger, Real-time Context Bus on top. Default model grok-voice-think-fast-2.0, pinned. Standing soul is injected at connect. Etch is off unless etch=True.
 monorepo:
   packages_count: slotignored
   build_orchestrator: slotignored

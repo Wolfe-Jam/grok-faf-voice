@@ -1,6 +1,6 @@
 [project]
 name = "grok-faf-voice"
-version = "0.4.0"
+version = "0.5.0"
 description = "grok-faf-voice | VML • Voice Memory Layer for Grok • Persistent across sessions, devices, models • LiveKit-enabled"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,7 +44,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "livekit-agents[xai]>=1.4",
+    "livekit-agents[xai]>=1.8.3",
     "httpx>=0.28",
     "python-dotenv>=1.0",
     "fastmcp>=4.0.0",

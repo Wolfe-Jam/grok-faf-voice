@@ -8,8 +8,9 @@ The two-line shape:
 That is the entire setup for the 10,000 voice consumers. First run
 provisions an anonymous identity silently (key + namepoint) via
 mcpaas.live and persists it at ``~/.grok-faf-voice/identity.json``.
-Subsequent runs load the identity and the agent picks up every
-session knowing what was etched in past ones.
+Subsequent runs load the identity. Each session opens on the standing
+string stored for that namepoint. Etch is off unless you pass
+``etch=True``.
 
 The architects who want explicit control still have ``FAFMemory``,
 ``FAFContext``, and raw LiveKit ``AgentServer`` underneath — this
@@ -42,6 +43,7 @@ from dotenv import load_dotenv
 from grok_faf_voice.context import FAFContext
 from grok_faf_voice.ledger import InMemoryVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.memory import LATENCY_BRIDGE_INSTRUCTIONS, FAFMemory
+from grok_faf_voice.standing import DEFAULT_INJECT_URL, InjectError, fetch_inject
 from grok_faf_voice.tools import enable_global_tool_bus
 
 if TYPE_CHECKING:
@@ -49,8 +51,39 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("grok_faf_voice.agent")
 
+# Pinned. grok-voice-latest is an alias that already moved once.
+VOICE_MODEL = "grok-voice-think-fast-2.0"
+
 # xAI realtime voices — validated at construction so typos surface early.
 SUPPORTED_VOICES: tuple[str, ...] = ("Ara", "Eve", "Leo", "Rex", "Sal")
+
+
+def compose_open_instructions(
+    standing: str,
+    *,
+    project_prompt: str | None = None,
+    recall: str | None = None,
+    extra: str | None = None,
+    etch: bool = False,
+) -> str:
+    """Build the session instructions.
+
+    Default is the standing string only (plus an explicit project prompt
+    or caller extra). The etch log and the latency-bridge rules are
+    included only when ``etch`` is on.
+    """
+    parts: list[str] = []
+    if project_prompt:
+        parts.append(project_prompt)
+    if standing:
+        parts.append(standing)
+    if etch and recall:
+        parts.append(recall)
+    if extra:
+        parts.append(extra)
+    if etch:
+        parts.append(LATENCY_BRIDGE_INSTRUCTIONS)
+    return "\n\n".join(parts)
 
 
 def _is_valid_voice(voice: str) -> bool:
@@ -273,8 +306,9 @@ class VoiceAgent:
 
     First run provisions an anonymous identity silently (key + namepoint)
     via mcpaas.live and persists it at ``~/.grok-faf-voice/identity.json``.
-    Subsequent runs load the identity — the agent opens every session
-    already remembering what was etched in past ones.
+    Subsequent runs load the identity. The agent opens on the standing
+    string for that namepoint (``POST /api/voice/inject``). It does not
+    etch, and it does not replay the etch log, unless ``etch=True``.
 
     The minimum env requirement is ``XAI_API_KEY`` (xAI realtime is the
     voice provider). LiveKit cloud env vars (``LIVEKIT_*``) are only
@@ -298,9 +332,12 @@ class VoiceAgent:
         ``False`` skips entirely. Any other string is treated as a path
         or MCPaaS slug (see :class:`FAFContext`).
     instructions
-        Extra system prompt appended after FAFContext + recall + the
-        latency-bridge rules. Leave as ``None`` for the default agent
-        persona.
+        Extra system prompt appended after the standing string. Leave
+        as ``None`` to open on the standing string alone.
+    etch
+        When ``True``, also load the etch log, attach etch/recall/merge
+        tools, and merge at session end. That is the previous default.
+        Off by default: a turn does not write itself back into the soul.
     identity_path
         Where to persist the anonymous identity. Defaults to
         ``~/.grok-faf-voice/identity.json``. File is written 0600.
@@ -326,10 +363,12 @@ class VoiceAgent:
         voice: str = "Ara",
         project_faf: str | bool = "auto",
         instructions: str | None = None,
+        etch: bool = False,
         identity_path: str | Path | None = None,
         ledger: VoiceSessionLedger | None = None,
         mcp_url: str = DEFAULT_MCP_URL,
         anonymous_issue_url: str = DEFAULT_ANONYMOUS_ISSUE_URL,
+        inject_url: str = DEFAULT_INJECT_URL,
         voice_name: str | None = None,
     ) -> None:
         if not _is_valid_voice(voice):
@@ -354,6 +393,8 @@ class VoiceAgent:
         self._voice = voice
         self._project_faf = project_faf
         self._extra_instructions = instructions
+        self._etch = etch
+        self._inject_url = inject_url
         self._identity_path = (
             Path(identity_path) if identity_path is not None
             else DEFAULT_IDENTITY_PATH
@@ -437,6 +478,7 @@ class VoiceAgent:
         from livekit import agents
         from livekit.agents import Agent, AgentServer, AgentSession
         from livekit.plugins import xai
+        from livekit.plugins.xai.realtime import TurnDetection
 
         faf = _maybe_load_faf_context(self._project_faf)
         mem = FAFMemory(
@@ -454,44 +496,54 @@ class VoiceAgent:
 
         @server.rtc_session()
         async def entrypoint(ctx: agents.JobContext) -> None:
-            # turn_detection is a plain dict at the LiveKit wire level —
-            # the typed TurnDetection class is overly strict for the
-            # server_vad params we pass. Same pattern as
-            # examples/hello_grok_with_etch.py.
+            # livekit-plugins-xai 1.8.3 calls .create_response on
+            # turn_detection. A plain dict raises. Do not pass reasoning:
+            # the plugin type has no "none", and the platform default is high.
             session: AgentSession = AgentSession(
                 llm=xai.realtime.RealtimeModel(
+                    model=VOICE_MODEL,
                     voice=voice,
-                    turn_detection={  # type: ignore[arg-type]
-                        "type": "server_vad",
-                        "threshold": 0.85,
-                        "silence_duration_ms": 500,
-                        "prefix_padding_ms": 333,
-                    },
+                    turn_detection=TurnDetection(
+                        type="server_vad",
+                        threshold=0.85,
+                        silence_duration_ms=500,
+                        prefix_padding_ms=333,
+                        create_response=True,
+                    ),
                 ),
             )
 
-            prior_context = await mem.recall_for_prompt()
+            try:
+                served = await fetch_inject(
+                    api_key,
+                    model=VOICE_MODEL,
+                    url=agent_self._inject_url,
+                )
+            except InjectError as exc:
+                raise VoiceAgentConfigError(str(exc)) from exc
 
-            instructions_parts: list[str] = []
-            if faf is not None:
-                instructions_parts.append(faf.system_prompt())
-            instructions_parts.append(prior_context)
-            if extra is not None:
-                instructions_parts.append(extra)
-            instructions_parts.append(LATENCY_BRIDGE_INSTRUCTIONS)
-            instructions = "\n\n".join(p for p in instructions_parts if p)
+            recall = await mem.recall_for_prompt() if agent_self._etch else None
+            instructions = compose_open_instructions(
+                served["instructions"],
+                project_prompt=faf.system_prompt() if faf is not None else None,
+                recall=recall,
+                extra=extra,
+                etch=agent_self._etch,
+            )
 
             agent = Agent(
                 instructions=instructions,
-                tools=mem.tools(session),
+                tools=mem.tools(session) if agent_self._etch else [],
             )
 
-            await mem.start_bus()
-            enable_global_tool_bus(mem, agent)
-            mem.attach_auto_merge(session, ctx, strategy="grok-decides")
+            if agent_self._etch:
+                await mem.start_bus()
+                enable_global_tool_bus(mem, agent)
+                mem.attach_auto_merge(session, ctx, strategy="grok-decides")
 
             await session.start(room=ctx.room, agent=agent)
-            await mem.on_session_start(session)
+            if agent_self._etch:
+                await mem.on_session_start(session)
 
         # Hand off to LiveKit CLI — reads sys.argv for the subcommand
         # (console / dev / start). This call blocks until the user

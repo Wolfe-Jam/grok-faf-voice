@@ -22,6 +22,12 @@ The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled
 
 ---
 
+## What's New in v0.5.0 — Standing string
+
+`VoiceAgent()` opens on the standing soul stored at your namepoint. It
+does not etch the call back into that soul unless you pass `etch=True`.
+The realtime model is pinned to `grok-voice-think-fast-2.0`.
+
 ## What's New in v0.4.0 — FastMCP 4
 
 `fastmcp` floor moves to `>=4.0.0` — the FAF Python family standard. No API change:

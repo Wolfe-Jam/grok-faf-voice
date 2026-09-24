@@ -80,12 +80,16 @@ def test_xai_realtime_model_importable():
 
 
 def test_xai_realtime_model_accepts_voice_and_turn_detection():
-    """README example passes `voice="Ara"` and a `turn_detection` dict.
-    If either kwarg is renamed, the example breaks."""
+    """VoiceAgent passes `model=`, `voice=`, and a TurnDetection object.
+    1.5.6 had no `model` argument and could not take the pin."""
     from livekit.plugins.xai.realtime import RealtimeModel
 
     sig = inspect.signature(RealtimeModel.__init__)
     params = sig.parameters
+    assert "model" in params, (
+        "RealtimeModel no longer accepts `model=` — "
+        "the grok-voice-think-fast-2.0 pin would not reach the socket"
+    )
     assert "voice" in params, (
         "RealtimeModel no longer accepts `voice=` — "
         "README example would fail at construction"

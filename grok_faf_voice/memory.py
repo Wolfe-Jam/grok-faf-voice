@@ -152,9 +152,13 @@ class FAFMemory:
         session = AgentSession(
             llm=xai.realtime.RealtimeModel(
                 voice="Ara",
-                turn_detection={"type": "server_vad", "threshold": 0.85,
-                                "silence_duration_ms": 500,
-                                "prefix_padding_ms": 333},
+                turn_detection=xai.realtime.TurnDetection(
+                    type="server_vad",
+                    threshold=0.85,
+                    silence_duration_ms=500,
+                    prefix_padding_ms=333,
+                    create_response=True,
+                ),
             ),
         )
         agent = Agent(instructions=ctx.system_prompt(), tools=mem.tools(session))

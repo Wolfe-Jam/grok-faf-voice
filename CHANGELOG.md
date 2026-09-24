@@ -5,6 +5,35 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-09-23 — Standing string, etch off by default
+
+The session opens on the standing soul at the namepoint
+(`POST /api/voice/inject`). That string is what was served, and the
+server keeps a receipt of its hash. A turn does not write itself back
+into the soul.
+
+### Changed
+
+- **`VoiceAgent` no longer etches by default.** `etch=True` restores the
+  previous open: etch log, etch/recall/merge tools, and auto-merge.
+  Without it, instructions are the standing string (plus an explicit
+  project prompt or `instructions=`), and the tool list has no
+  `etch_memory`.
+- **Realtime model is pinned to `grok-voice-think-fast-2.0`.**
+  `grok-voice-latest` is not passed. Reasoning effort is not set, so
+  the platform default (`high`) still applies. The LiveKit plugin type
+  rejects `"none"`; a raw socket can send it.
+- **`livekit-agents[xai]>=1.8.3`.** 1.5.6 has no `model` argument and
+  hardcodes the retired `grok-4-1-fast-non-reasoning` slug, so the pin
+  never reached the socket. 1.8.3 requires a `TurnDetection` object,
+  not a dict.
+- The xAI key stays in the caller's process. Inject never receives it.
+
+### Added
+
+- `grok_faf_voice.standing.fetch_inject` — the inject call.
+- `compose_open_instructions` — the string the session actually opens on.
+
 ## [0.4.0] — 2026-09-07 — FastMCP 4
 
 `fastmcp` floor moves to `>=4.0.0` — the FAF Python family standard.
