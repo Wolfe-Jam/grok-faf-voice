@@ -34,7 +34,7 @@ into the soul.
 ### Added
 
 - `grok_faf_voice.standing.fetch_inject` — the inject call.
-- `compose_open_instructions` — the string the session actually opens on.
+- `grok_faf_voice.agent.compose_open_instructions` — the string the session actually opens on.
 
 ## [0.4.0] — 2026-09-07 — FastMCP 4
 
