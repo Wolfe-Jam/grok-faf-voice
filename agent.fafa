@@ -1,0 +1,38 @@
+version: "1.0"
+agent:
+  name: grok-faf-voice
+  displayName: grok-faf-voice
+  id: urn:air:faf.one:agent:grok-faf-voice
+  version: 0.5.0
+  description: "Voice agents that remember: the Voice Memory Layer for Grok Voice, on LiveKit."
+  homepage: https://faf.one/voice
+capabilities:
+  - name: Open on stored memory
+    type: tool
+    description: VoiceAgent() starts a Grok Voice session on the memory stored at your namepoint
+    tags:
+      - open on stored memory
+  - name: Ask-first write-back
+    type: tool
+    description: The call is written back to memory only when you pass etch=True
+    tags:
+      - ask-first write-back
+  - name: Custom voices
+    type: tool
+    description: Use a cloned xAI voice ID with VoiceAgent(voice=...)
+    tags:
+      - custom voices
+endpoints:
+  - protocol: library
+    transport: stdio
+    location: grok-faf-voice
+metadata:
+  cards:
+    domain: faf.one
+    examples:
+      - How do I give a Grok Voice agent memory across sessions?
+      - How do I stop a voice agent writing every call into memory?
+      - Can I use a custom xAI voice with LiveKit?
+    packages:
+      - registryType: pypi
+        identifier: grok-faf-voice
