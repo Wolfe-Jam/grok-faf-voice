@@ -62,7 +62,9 @@ async def test_fetch_inject_returns_the_served_string():
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        data = await fetch_inject("k", model=VOICE_MODEL, url="https://mcpaas.live/api/voice/inject", client=client)
+        data = await fetch_inject(
+            "k", model=VOICE_MODEL, url="https://mcpaas.live/api/voice/inject", client=client
+        )
     assert data["instructions"] == "HELLO"
     assert data["sha256"] == "abc"
 

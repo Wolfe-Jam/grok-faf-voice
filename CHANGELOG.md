@@ -5,7 +5,9 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] — 2026-09-23 — Standing string, etch off by default
+## [0.5.0] — 2026-10-29 — The Ask-First Memory Edition
+
+**`VoiceAgent()` opens on the memory stored at your namepoint, and only writes the call back when you pass `etch=True`.** 202 tests.
 
 The session opens on the standing soul at the namepoint
 (`POST /api/voice/inject`). That string is what was served, and the

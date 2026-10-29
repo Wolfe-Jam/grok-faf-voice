@@ -22,18 +22,13 @@ The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled
 
 ---
 
-## What's New in v0.5.0 — Standing string
+## What's New in v0.5.0 — The Ask-First Memory Edition
 
-`VoiceAgent()` opens on the standing soul stored at your namepoint. It
-does not etch the call back into that soul unless you pass `etch=True`.
-The realtime model is pinned to `grok-voice-think-fast-2.0`.
+**`VoiceAgent()` opens on the memory stored at your namepoint, and only writes the call back when you pass `etch=True`.** 202 tests.
 
-## What's New in v0.4.0 — FastMCP 4
-
-`fastmcp` floor moves to `>=4.0.0` — the FAF Python family standard. No API change:
-the MCPaaS client pattern (`Client` + `StreamableHttpTransport` + `except ToolError`)
-is unchanged on 4.x, and grok's own `httpx` calls (xAI / ElevenLabs / transcribe)
-are untouched. `pydantic>=2.12` follows FastMCP 4's floor. 196 tests green.
+- **Ask first.** Without `etch=True` the session opens on what is stored and the tool list has no `etch_memory`. `etch=True` brings back the etch log, the etch / recall / merge tools and auto-merge.
+- **Pinned model.** The realtime model is `grok-voice-think-fast-2.0`.
+- Full notes: [CHANGELOG](CHANGELOG.md).
 
 ---
 
