@@ -7,6 +7,8 @@
 **Home:** [faf.one/voice](https://faf.one/voice)
 **Live demo:** [faf-voice.vercel.app](https://faf-voice.vercel.app)
 
+⭐ [Star it on GitHub](https://github.com/Wolfe-Jam/grok-faf-voice): bookmarks it for you, helps other devs find it too.
+
 [![PyPI](https://img.shields.io/pypi/v/grok-faf-voice.svg?color=6366F1)](https://pypi.org/project/grok-faf-voice/)
 [![Python](https://img.shields.io/pypi/pyversions/grok-faf-voice.svg?color=6366F1)](https://pypi.org/project/grok-faf-voice/)
 [![License](https://img.shields.io/badge/License-MIT-FCD34D.svg)](https://github.com/Wolfe-Jam/grok-faf-voice/blob/main/LICENSE)
