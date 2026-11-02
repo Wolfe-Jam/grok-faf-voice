@@ -14,7 +14,7 @@ foreground hold for full UX coverage.
 Generic ``tool.about_to_run`` and ``tool.completed`` events come from
 ``enable_global_tool_bus(memory, agent)`` — call it once after the
 Agent is constructed to give the Bus full visibility over EVERY tool
-the agent runs (FAFMemory's own four AND any user-defined tools).
+the agent runs (FAFMemory's own five AND any user-defined tools).
 The factory output is marked ``_bus_wrapped=True`` so the global
 wrapper skips re-wrapping; only domain-specific events
 (``soul.updated``, ``paralinguistic.detected``, ``merge.starting``,
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 def _mark_bus_wrapped(tool: Any) -> Any:
     """Tag a FunctionTool so ``_wrap_tool_with_bus`` skips re-wrapping.
 
-    Used by the four FAFMemory factories to opt out of generic
+    Used by the FAFMemory factories to opt out of generic
     ``tool.*`` wrapping (they emit only domain-specific events; the
     global wrapper handles uniform tool observability everywhere else).
     """
@@ -62,58 +62,89 @@ def _mark_bus_wrapped(tool: Any) -> Any:
 
 
 def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
-    """Return an @function_tool that etches voice content to FAFMemory."""
-    from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
-
+    """Return an @function_tool that stages a fact. It does not write."""
     _ = bus or mem.bus  # reserved for future per-factory emissions
 
     @function_tool
     async def etch_memory(context: RunContext, content: str) -> str:
-        """Save content to persistent eternal memory.
+        """Stage a fact. This does not save it.
 
         ONLY CALL THIS TOOL WHEN YOU HAVE THE ACTUAL FACT TO REMEMBER.
         The ``content`` argument MUST be the substance itself — never
         the user's meta-statement about wanting to remember something.
 
+        After this returns, say the exact sentence it gives you, then
+        wait. Call confirm_memory only after the namepoint holder
+        agrees. A second voice in the room is not a confirmation.
+
         EXAMPLES (correct):
           User: "Remember my favorite color is cyan."
           → etch_memory(content="favorite color is cyan")
-
-          User: "Etch this — today is launch day for v0.1.3."
-          → etch_memory(content="today is launch day for v0.1.3")
+          → say exactly: "I'll remember this: favorite color is cyan."
+          → wait for the holder to confirm, then confirm_memory.
 
         EXAMPLES (DO NOT do this):
           User: "I want to make a memory."
-          → DO NOT CALL THIS TOOL. The user has stated intent but no
-            substance. Reply: "Sure, what would you like me to
-            remember?" Wait for the actual content, then call
-            etch_memory with ONLY the content (not the user's intent).
-
-          User: "Make a note."
-          → DO NOT CALL THIS TOOL. Reply: "Of course, what should I
-            note?" Wait, then etch the substance.
-
-        Etching meta-statements ("user wants to make a memory") pollutes
-        the soul with non-content. When in doubt, ASK and WAIT.
+          → DO NOT CALL THIS TOOL. Reply: "Sure, what would you like me
+            to remember?" Wait for the actual content.
 
         CRITICAL LATENCY RULE (must follow):
-        - ALWAYS speak a short natural bridge FIRST (under 400ms):
-          "Got it.", "Noted.", "I'll remember that." — THEN call this tool.
-        - Never go silent. The realtime stream emits no filler audio
-          during tool execution.
+        - Speak a short bridge FIRST ("Got it."), then call this tool.
+        - Then say the exact sentence this tool returns.
+        - Never go silent during tool execution.
         """
-        # tool.about_to_run / tool.completed come from the global
-        # wrapper (enable_global_tool_bus). Domain-specific
-        # ``soul.updated`` is emitted by ``mem.etch()`` itself.
+        _ = context
+        spoken = mem.stage_memory(content, type="memory")
+        return (
+            "Staged, not saved. Say this exact sentence, then wait for "
+            f"the namepoint holder to confirm: {spoken}"
+        )
+
+    return _mark_bus_wrapped(etch_memory)
+
+
+def make_confirm_tool(mem: FAFMemory, bus: ContextBus | None = None):
+    """Return an @function_tool that writes only after speak + confirm.
+
+    ``holder_confirmed`` is not a parameter. The tool reads the
+    transcript. A call with no transcript does not write.
+    """
+    from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
+
+    bus = bus or mem.bus
+
+    @function_tool
+    async def confirm_memory(context: RunContext, content: str) -> str:
+        """Save a staged fact after the holder confirms it.
+
+        Call this only after you have spoken the exact sentence
+        "I'll remember this: <fact>." and the namepoint holder has
+        agreed. If you call this on your own, nothing is saved.
+
+        ``content`` must be the staged fact, unchanged.
+        """
+        pending = mem.pending
+        confirmed = holder_confirmed(
+            _messages_from(getattr(context, "session", None)),
+            pending["spoken"] if pending else "",
+        )
         try:
-            await mem.etch(content, type="memory")
-            return f"Etched: {content}"
+            result = await mem.commit_staged(
+                content, holder_confirmed=confirmed
+            )
         except FAFAuthRequiredError as e:
             return str(e)
         except FAFEtchError as e:
-            return f"Could not save: {e}"
+            return f"Not saved: {e}"
+        if pending and pending.get("type") == "paralinguistic":
+            await bus.emit_paralinguistic_detected(
+                marker_type=str(pending.get("marker_type") or ""),
+                value=str(pending.get("marker_value") or content),
+                topic=pending.get("topic"),
+            )
+        return result
 
-    return _mark_bus_wrapped(etch_memory)
+    return _mark_bus_wrapped(confirm_memory)
 
 
 def make_recall_tool(mem: FAFMemory, bus: ContextBus | None = None):
@@ -155,8 +186,6 @@ def make_paralinguistic_tool(mem: FAFMemory, bus: ContextBus | None = None):
       - The user's speaking pace shifts (faster when stressed, etc.)
       - The user interrupts frequently or pauses notably
     """
-    from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
-
     bus = bus or mem.bus
 
     @function_tool
@@ -177,31 +206,27 @@ def make_paralinguistic_tool(mem: FAFMemory, bus: ContextBus | None = None):
           marker_type="interruption_pattern", value="frequent"
 
         Don't fabricate markers. Only call when the cue is genuinely
-        observable. Markers persist across sessions so the agent can
-        open future calls with appropriate awareness.
+        observable. This stages the marker. It is saved only after you
+        speak the exact sentence and the namepoint holder confirms.
 
         CRITICAL LATENCY RULE (must follow):
-        - ALWAYS speak a short micro-bridge FIRST: "Noted the tone.",
-          "Got the vibe.", "Registering that.", or "Marking the energy."
-          — THEN call this tool.
+        - Speak a short micro-bridge FIRST ("Noted the tone."), then
+          call this tool. Then say the exact sentence it returns.
         - Never go silent.
         """
-        # tool.about_to_run / tool.completed come from the global
-        # wrapper. Domain-specific paralinguistic.detected fires here
-        # on the success path so subscribers can react regardless of
-        # whether enable_global_tool_bus was called.
-        try:
-            await mem.etch_paralinguistic(
-                marker_type, value, context=topic
-            )
-            await bus.emit_paralinguistic_detected(
-                marker_type=marker_type, value=value, topic=topic
-            )
-            return f"Noted: {marker_type}={value}"
-        except FAFAuthRequiredError as e:
-            return str(e)
-        except FAFEtchError as e:
-            return f"Could not note: {e}"
+        _ = context
+        entry, tags = mem.format_paralinguistic_entry(
+            marker_type, value, context=topic
+        )
+        spoken = mem.stage_memory(entry, type="paralinguistic", tags=tags)
+        if mem.pending is not None:
+            mem.pending["marker_type"] = marker_type
+            mem.pending["marker_value"] = value
+            mem.pending["topic"] = topic
+        return (
+            "Staged, not saved. Say this exact sentence, then wait for "
+            f"the namepoint holder to confirm: {spoken}"
+        )
 
     return _mark_bus_wrapped(note_paralinguistic)
 
@@ -277,6 +302,101 @@ def make_merge_tool(
     return _mark_bus_wrapped(merge_now)
 
 
+_YES = {
+    "yes",
+    "yeah",
+    "yep",
+    "yup",
+    "confirm",
+    "confirmed",
+    "ok",
+    "okay",
+    "sure",
+    "please",
+    "do it",
+    "go ahead",
+    "yes please",
+    "yeah please",
+    "ok please",
+}
+
+
+def _role_of(message: Any) -> str:
+    role = message.get("role") if isinstance(message, dict) else getattr(message, "role", "")
+    value = getattr(role, "value", role)
+    return str(value).lower()
+
+
+def _text_of(message: Any) -> str:
+    content = (
+        message.get("content") if isinstance(message, dict) else getattr(message, "content", "")
+    )
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(str(part.get("text") or part.get("content") or ""))
+            else:
+                parts.append(
+                    str(getattr(part, "text", "") or getattr(part, "content", "") or "")
+                )
+        return " ".join(part for part in parts if part)
+    return str(content or "")
+
+
+def _messages_from(session: Any) -> list[Any]:
+    """Transcript items, or an empty list when the session has none."""
+    if session is None:
+        return []
+    history = getattr(session, "history", None)
+    if history is None:
+        history = getattr(session, "chat_ctx", None)
+    if history is None:
+        return []
+    if isinstance(history, list):
+        return history
+    messages = getattr(history, "messages", None)
+    if callable(messages):
+        try:
+            return list(messages())
+        except TypeError:
+            return []
+    items = getattr(history, "items", None)
+    if items is not None:
+        return list(items)
+    return []
+
+
+def _is_yes(text: str) -> bool:
+    cleaned = text.strip().lower().strip(" .!?,")
+    return cleaned in _YES
+
+
+def holder_confirmed(messages: list[Any], spoken: str) -> bool:
+    """True when the holder said yes after the agent spoke ``spoken``.
+
+    A missing transcript is not a confirmation. The model's own call
+    cannot set this true.
+    """
+    if not messages or not spoken:
+        return False
+    last_user = None
+    for index, message in enumerate(messages):
+        if _role_of(message) == "user":
+            last_user = index
+    if last_user is None or not _is_yes(_text_of(messages[last_user])):
+        return False
+    for message in messages[:last_user]:
+        role = _role_of(message)
+        if role in {"assistant", "agent"} and spoken in _text_of(message):
+            return True
+    return False
+
+
 # ----------------------------------------------------------------
 # Global tool bus middleware
 #
@@ -284,7 +404,7 @@ def make_merge_tool(
 # user-defined). Mutates each FunctionTool in place by swapping its
 # underlying callable with a wrapper that emits tool.about_to_run
 # before and tool.completed after. Idempotent via _bus_wrapped
-# sentinel — already-wrapped tools (including the four FAFMemory
+# sentinel — already-wrapped tools (including the FAFMemory
 # factories) are skipped.
 # ----------------------------------------------------------------
 

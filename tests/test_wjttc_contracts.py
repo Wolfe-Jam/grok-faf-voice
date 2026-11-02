@@ -88,7 +88,7 @@ def test_xai_realtime_model_accepts_voice_and_turn_detection():
     params = sig.parameters
     assert "model" in params, (
         "RealtimeModel no longer accepts `model=` — "
-        "the grok-voice-think-fast-2.0 pin would not reach the socket"
+        "the grok-voice-3.0 pin would not reach the socket"
     )
     assert "voice" in params, (
         "RealtimeModel no longer accepts `voice=` — "
@@ -97,6 +97,10 @@ def test_xai_realtime_model_accepts_voice_and_turn_detection():
     assert "turn_detection" in params, (
         "RealtimeModel no longer accepts `turn_detection=` — "
         "README example would fail at construction"
+    )
+    assert "reasoning" in params, (
+        "RealtimeModel no longer accepts `reasoning=` — "
+        "the effort pin would not reach the socket"
     )
 
 

@@ -112,11 +112,11 @@ xAI / LiveKit ship breaking changes weekly.
 
 ---
 
-## Adding a new VoiceProvider (v0.3.0+)
+## Voice backends (backlog)
 
-Once `VoiceProvider` Protocol lands in v0.3.0, contributing a new
-backend (ElevenLabs / Hume / custom cloning) is the highest-value
-contribution path. Each new provider:
+xAI realtime is the backend that ships. An ElevenLabs or Hume backend
+is backlog. It is not a scheduled release. If a `VoiceProvider`
+protocol lands, a new backend would:
 
 - Implements the `VoiceProvider` Protocol
 - Lives in `grok_faf_voice/providers/<name>.py`

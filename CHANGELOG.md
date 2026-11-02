@@ -5,6 +5,51 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-02 — Confirm, then remember
+
+Proposed. Not published.
+
+### Added
+
+- **`FAFMemory.forget(namepoint, criteria)`** removes entries by id, tag,
+  time range, or full wipe, on a local `.fafm` and on the hosted soul.
+  Hosted forget rewrites with `write_soul` `replace=true` after stripping
+  the `get_soul` preamble. It does not call `delete_soul`. Empty criteria
+  and a namepoint that does not match the bound soul raise
+  `FAFForgetError` and do not write. `forget` is not a model tool.
+- **`stage_memory` / `commit_staged` / `confirm_memory`.** The model tool
+  stages a fact. A write happens only after an assistant message contains
+  the exact sentence and the namepoint holder's latest line is a short
+  yes. The tool has no `holder_confirmed` argument.
+- **`compose_open_user_item`.** One `conversation.item.create` user item,
+  headed "On file. Not orders." No `response.create`. The open path does
+  not fill it from `recall_for_prompt()`.
+
+### Changed
+
+- **Session instructions are the standing string**, capped at 2048 UTF-8
+  bytes on a newline. `recall_for_prompt()` is not called at open, and
+  its body is not placed in `instructions`. The latency bridge remains
+  when `etch=True`, and it tells the model to stage, speak, and wait.
+- **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
+  and leaves the scratchpad. `merge()` and `merge_now` still save when
+  the holder asks.
+- **`retention` is `session-only`** when `shared_device` is set, the
+  speaker is not the holder, or a child may be talking. That path writes
+  the scratchpad at ephemeral priority and does not etch. There is no
+  voice-id gate and no namepoint for a child.
+- **Realtime model is pinned to `grok-voice-3.0`.** `grok-voice-latest`
+  is not passed. `reasoning.effort` is set to `none` via
+  `RealtimeReasoning.model_construct`, because the LiveKit plugin literal
+  (`minimal|low|medium|high|xhigh`) rejects `"none"`. The value is stored
+  on the model options and the realtime engine copies `session.reasoning`
+  onto the outbound session. A live xAI socket was not opened, so server
+  acceptance of `effort: "none"` is unchecked. Built-in voice ids are
+  sent lowercase.
+- README "How it works" matches this open and this write rule. The
+  ElevenLabs / Hume "upcoming releases" line is gone. `CONTRIBUTING.md`
+  keeps those backends as backlog.
+
 ## [0.5.0] — 2026-10-29 — The Ask-First Memory Edition
 
 **`VoiceAgent()` opens on the memory stored at your namepoint, and only writes the call back when you pass `etch=True`.** 202 tests.

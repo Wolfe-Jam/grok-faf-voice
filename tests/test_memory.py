@@ -64,18 +64,20 @@ class _FakeSession:
         return None
 
 
-def test_tools_returns_quartet():
-    """tools(session) returns etch + recall + paralinguistic + merge_now."""
+def test_tools_returns_the_set_without_forget():
+    """tools(session) exposes confirm, and does not expose forget."""
     mem = FAFMemory("grok")
     tools = mem.tools(_FakeSession())
-    assert len(tools) == 4
+    assert len(tools) == 5
     names = {t.info.name for t in tools}
     assert names == {
         "etch_memory",
+        "confirm_memory",
         "recall_memory",
         "note_paralinguistic",
         "merge_now",
     }
+    assert "forget" not in names
 
 
 @pytest.mark.network
@@ -206,22 +208,48 @@ async def test_etch_raises_auth_error_when_no_api_key():
 
 
 async def test_etch_tool_returns_friendly_message_when_no_api_key():
-    """The @function_tool wrapper should catch FAFAuthRequiredError
-    and return the friendly text — never a Python traceback to the
-    realtime model.
+    """Staging does not need a key. The write, after the holder confirms,
+    returns the friendly Voice API key text — never a traceback.
     """
-    from grok_faf_voice.tools import make_etch_tool
+    from grok_faf_voice.tools import make_confirm_tool
+
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
+
+    class _Hist:
+        def __init__(self, messages: list) -> None:
+            self._messages = messages
+
+        def messages(self) -> list:
+            return self._messages
+
+    class _Session:
+        def __init__(self, messages: list) -> None:
+            self.history = _Hist(messages)
+
+    class _Ctx:
+        def __init__(self, messages: list) -> None:
+            self.session = _Session(messages)
 
     with patch.dict(os.environ, {}, clear=True):
         mem = FAFMemory("grok")
-        tool = make_etch_tool(mem)
+        spoken = mem.stage_memory("hello")
+        tool = make_confirm_tool(mem)
+        ctx = _Ctx([_Msg("assistant", spoken), _Msg("user", "yes")])
 
-        # FunctionTool wraps the original; we invoke the underlying
-        # callable directly via .__wrapped__ if exposed, else via .info.
-        callable_fn = getattr(tool, "__wrapped__", None) or tool.info.callable
-        result = await callable_fn(None, "hello")
+        class TripwireClient:
+            def __init__(self, url):
+                raise AssertionError(
+                    "Client should not be constructed when no API key"
+                )
+
+        with patch("grok_faf_voice.memory.Client", TripwireClient):
+            result = await tool._func(ctx, "hello")
 
         assert "Voice API key" in result
+        assert "Traceback" not in result
 
 
 async def test_etch_wraps_invalid_soul_tool_error():
@@ -1071,8 +1099,8 @@ async def test_attach_auto_merge_keeps_session_on_close_for_observability():
     assert len(session.on_handlers["close"]) == 1
 
 
-async def test_shutdown_callback_logs_completed_to_ledger():
-    """Successful shutdown callback writes status='completed' + counts to ledger."""
+async def test_shutdown_callback_logs_held_to_ledger():
+    """Shutdown holds the scratchpad. It does not etch, and it does not merge."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
@@ -1108,23 +1136,21 @@ async def test_shutdown_callback_logs_completed_to_ledger():
     assert len(ledger.attempts) == 1
     rec = ledger.attempts[0]
     assert rec["session_id"] == "sess-shutdown-ok"
-    assert rec["status"] == "completed"
-    assert rec["promoted"] == 1
-    assert rec["kept_ephemeral"] == 0
+    assert rec["status"] == "held"
+    assert rec["promoted"] == 0
+    assert rec["kept_ephemeral"] == 1
     assert rec["merged"] == 0
 
 
-async def test_shutdown_callback_logs_partial_or_failed_on_exception():
-    """When merge raises, the callback writes status='partial_or_failed'
-    + the error string and DOES NOT re-raise (shutdown must complete).
-    """
+async def test_shutdown_callback_does_not_etch():
+    """A patched etch that would raise is never called. Status stays held."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
     mem = FAFMemory("grok", api_key="k", ledger=ledger)
     mem.scratchpad.update("k", "v")
 
-    session = _FakeAgentSession(session_id="sess-shutdown-fail")
+    session = _FakeAgentSession(session_id="sess-shutdown-hold")
     ctx = _FakeJobContext()
 
     async def _boom(*_args, **_kwargs):
@@ -1133,15 +1159,16 @@ async def test_shutdown_callback_logs_partial_or_failed_on_exception():
     mem.attach_auto_merge(session, ctx, strategy="heuristic")
     callback = ctx.shutdown_callbacks[0]
 
-    with patch.object(mem, "etch", side_effect=_boom):
-        # Must not raise — shutdown completes cleanly.
+    with patch.object(mem, "etch", side_effect=_boom) as etch:
         await callback()
+        etch.assert_not_called()
 
     assert len(ledger.attempts) == 1
     rec = ledger.attempts[0]
-    assert rec["session_id"] == "sess-shutdown-fail"
-    assert rec["status"] == "partial_or_failed"
-    assert "etch went sideways" in rec["error"]
+    assert rec["session_id"] == "sess-shutdown-hold"
+    assert rec["status"] == "held"
+    assert rec["promoted"] == 0
+    assert rec["kept_ephemeral"] == 1
 
 
 async def test_shutdown_callback_no_ops_when_merge_already_completed():
@@ -1219,9 +1246,9 @@ async def test_attach_auto_merge_resets_flags_for_session_reuse():
 
     assert len(ledger.attempts) == 2
     assert ledger.attempts[0]["session_id"] == "sess-1"
-    assert ledger.attempts[0]["status"] == "completed"
+    assert ledger.attempts[0]["status"] == "held"
     assert ledger.attempts[1]["session_id"] == "sess-2"
-    assert ledger.attempts[1]["status"] == "completed"
+    assert ledger.attempts[1]["status"] == "held"
 
 
 async def test_shutdown_callback_does_not_propagate_unexpected_errors():

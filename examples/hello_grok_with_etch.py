@@ -70,19 +70,16 @@ async def entrypoint(ctx: agents.JobContext):
         ),
     )
 
-    # Pull prior soul into a system-prompt-ready string so the agent
-    # opens this session knowing what was etched in past ones. Falls
-    # back to a "first session" message gracefully if the soul is empty
-    # or unreadable — never raises.
-    prior_context = await mem.recall_for_prompt()
-
+    # Open on the project prompt and the tool rules. The soul body is
+    # not placed in instructions. recall_memory is the long tail, on a
+    # later turn. etch_memory stages; confirm_memory writes after the
+    # holder agrees.
     agent = Agent(
         instructions=(
             f"{faf.system_prompt()}\n\n"
-            f"{prior_context}\n\n"
             f"{LATENCY_BRIDGE_INSTRUCTIONS}"
         ),
-        tools=mem.tools(session),  # etch + recall + paralinguistic + merge_now
+        tools=mem.tools(session),
     )
 
     # Start the Context Bus eagerly so subscribers can listen for the

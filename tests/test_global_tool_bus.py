@@ -312,10 +312,11 @@ async def test_wrapper_fires_through_function_tool_call_path():
 
 
 async def test_factory_tools_still_emit_domain_events_after_global_wrap():
-    """make_paralinguistic_tool emits paralinguistic.detected on success.
-    The global wrapper must not silence that domain-specific event.
+    """confirm_memory emits paralinguistic.detected after a staged marker
+    is confirmed. The global wrapper must not silence that event.
+    note_paralinguistic itself only stages.
     """
-    from grok_faf_voice.tools import make_paralinguistic_tool
+    from grok_faf_voice.tools import make_confirm_tool, make_paralinguistic_tool
 
     mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
@@ -327,22 +328,46 @@ async def test_factory_tools_still_emit_domain_events_after_global_wrap():
 
     mem.bus.on(BusEvent.PARALINGUISTIC_DETECTED, on_para)
 
-    # Stub etch_paralinguistic so the tool body succeeds without MCPaaS.
-    async def _stub_etch_para(*args, **kwargs):
+    async def _stub_etch(*args, **kwargs):
         return "ok"
 
-    mem.etch_paralinguistic = _stub_etch_para  # type: ignore[method-assign]
+    mem.etch = _stub_etch  # type: ignore[method-assign]
 
-    tool = make_paralinguistic_tool(mem)
-    assert getattr(tool, "_bus_wrapped", False) is True
+    note = make_paralinguistic_tool(mem)
+    confirm = make_confirm_tool(mem)
+    assert getattr(note, "_bus_wrapped", False) is True
 
-    agent = _FakeAgent(tools=[tool])
-    enable_global_tool_bus(mem, agent)
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
 
-    # Invoke factory tool through the (skipped) wrapper path.
-    await agent.tools[0]._func(
-        context=None, marker_type="tone", value="calm"
-    )
+    class _Hist:
+        def __init__(self, messages: list) -> None:
+            self._messages = messages
+
+        def messages(self) -> list:
+            return self._messages
+
+    class _Session:
+        def __init__(self, messages: list) -> None:
+            self.history = _Hist(messages)
+
+    class _Ctx:
+        def __init__(self, messages: list | None = None) -> None:
+            self.session = _Session(messages or [])
+
+    await note._func(_Ctx(), "tone", "calm")
+    await asyncio.sleep(0.05)
+    assert received == []
+
+    pending = mem.pending
+    assert pending is not None
+    ctx = _Ctx([
+        _Msg("assistant", pending["spoken"]),
+        _Msg("user", "yes"),
+    ])
+    await confirm._func(ctx, pending["content"])
     await asyncio.sleep(0.05)
 
     assert len(received) == 1
