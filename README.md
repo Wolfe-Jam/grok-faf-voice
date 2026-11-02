@@ -36,7 +36,7 @@ Proposed. Not published.
 **`VoiceAgent()` opens on the memory stored at your namepoint, and only writes the call back when you pass `etch=True`.** 202 tests.
 
 - **Ask first.** Without `etch=True` the session opens on what is stored and the tool list has no `etch_memory`. `etch=True` brings back the etch log, the etch / recall / merge tools and auto-merge.
-- **Pinned model.** The realtime model is `grok-voice-think-fast-2.0`.
+- **Pinned model.** The realtime model is pinned in one place: `VOICE_MODEL` in `grok_faf_voice/agent.py`.
 - Full notes: [CHANGELOG](CHANGELOG.md).
 
 ---
