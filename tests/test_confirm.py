@@ -359,6 +359,61 @@ async def test_merge_request_final_does_not_drop_or_block_the_later_yes():
     assert mem.merge_armed is False
 
 
+def test_bridge_without_a_tool_asks_once_for_etch():
+    """Live 2026-11-03: the model said "Got it." and never called etch."""
+    mem = FAFMemory("grok", api_key="k")
+    calls: list[dict] = []
+
+    class _Talks:
+        def __init__(self) -> None:
+            self.history = _Hist([
+                _Msg("user", "Please remember that my favorite color is cyan."),
+                _Msg("assistant", "Got it."),
+            ])
+
+        def generate_reply(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    listener = HolderConfirm(mem, _Talks())
+    item = _Msg("assistant", "Got it.")
+    listener._on_item(SimpleNamespace(item=item))
+    listener._on_item(SimpleNamespace(item=item))
+    assert len(calls) == 1
+    assert "etch_memory" in str(calls[0].get("instructions"))
+    assert mem.pending is None
+
+
+def test_no_etch_nudge_when_staged_or_the_user_did_not_ask():
+    mem = FAFMemory("grok", api_key="k")
+    calls: list[dict] = []
+
+    class _Talks:
+        def __init__(self, messages: list) -> None:
+            self.history = _Hist(messages)
+
+        def generate_reply(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    listener = HolderConfirm(
+        mem,
+        _Talks([_Msg("user", "Please remember that my favorite color is cyan.")]),
+    )
+    mem.stage_memory("favorite color is cyan")
+    listener._on_item(SimpleNamespace(item=_Msg("assistant", "Got it.")))
+    mem.drop_pending()
+    other = HolderConfirm(
+        mem,
+        _Talks([_Msg("user", "Please save what we discussed.")]),
+    )
+    other._on_item(SimpleNamespace(item=_Msg("assistant", SAVE_SPOKEN)))
+    plain = HolderConfirm(mem, _Session([
+        _Msg("user", "Please remember that my favorite color is cyan."),
+    ]))
+    plain._on_item(SimpleNamespace(item=_Msg("assistant", "Got it.")))
+    assert calls == []
+    assert mem.pending is None
+
+
 def test_instructions_do_not_quote_the_confirmation_sentence():
     """The model learns the sentence from the tool result, not the prompt."""
     from grok_faf_voice.memory import LATENCY_BRIDGE_INSTRUCTIONS

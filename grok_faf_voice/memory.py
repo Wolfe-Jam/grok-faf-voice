@@ -82,8 +82,9 @@ CRITICAL LATENCY RULE (follow exactly):
 CONFIRM BEFORE WRITE (follow exactly):
 - You do not know the confirmation sentence until a tool returns it.
   Do not invent a sentence. Do not say that anything was saved.
-- Invoke etch_memory with the fact. It stages the fact. It does not
-  save it. Then say only the sentence it returns, and stop. Do not
+- Invoke etch_memory with the fact in that same turn. "Got it." by
+  itself is not a finished reply. The tool stages the fact. It does
+  not save it. Then say only the sentence it returns, and stop. Do not
   invoke another tool to save it. Do not speak the tool call.
 - The SDK saves when the namepoint holder's next final reply is a yes.
 - A second voice in the room is not a confirmation.

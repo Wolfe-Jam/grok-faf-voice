@@ -371,6 +371,15 @@ def _ends_with_spoken(text: str, spoken: str) -> bool:
 # The sentence merge_now requires before it writes.
 SAVE_SPOKEN = "I'll save what we discussed."
 
+# Spoken once, to the model, when it stopped after a remember request
+# without staging. Not a second parser: the model still calls the tool.
+_ETCH_NUDGE = (
+    "The holder asked you to remember a fact and you stopped without "
+    "staging it. Invoke the etch_memory tool now with that fact. Then "
+    "say only the sentence the tool returns. Do not speak the tool call. "
+    "Do not say that it was saved."
+)
+
 
 def holder_confirmed(messages: list[Any], spoken: str) -> bool:
     """True when the holder's latest line is a yes to ``spoken``.
@@ -406,6 +415,21 @@ def _last_assistant_text(messages: list[Any]) -> str:
         if _role_of(message) in {"assistant", "agent"}:
             return _text_of(message)
     return ""
+
+
+def _last_user_text(messages: list[Any]) -> str:
+    """Text of the latest user message, or an empty string."""
+    for message in reversed(messages):
+        if _role_of(message) == "user" and _text_of(message).strip():
+            return _text_of(message)
+    return ""
+
+
+def _asks_to_remember(text: str) -> bool:
+    """True when the holder asked to remember a fact, not only the verb."""
+    if not re.search(r"\bremember\b", text, flags=re.IGNORECASE):
+        return False
+    return len(_norm_match(text).split()) >= 4
 
 
 def _user_after_last_assistant(messages: list[Any]) -> str:
@@ -476,6 +500,8 @@ class HolderConfirm:
         self._assistant_at_stage = ""
         self._claimed = False
         self._finished = False
+        self._last_user_final = ""
+        self._nudged_for = ""
 
     @property
     def session(self) -> Any | None:
@@ -517,11 +543,47 @@ class HolderConfirm:
         text = _text_of(item)
         if text.strip():
             self._heard_assistant = text
+            self._maybe_nudge_etch()
+
+    def _remember_request(self) -> str:
+        """The holder line that asked to remember, if that is the latest one."""
+        heard = _last_user_text(_messages_from(self._session))
+        if _asks_to_remember(heard):
+            return heard
+        if _asks_to_remember(self._last_user_final):
+            return self._last_user_final
+        if _asks_to_remember(self._open_text):
+            return self._open_text
+        return ""
+
+    def _maybe_nudge_etch(self) -> None:
+        """Ask once when the model stopped without staging a remember request.
+
+        grok-voice-3.0 often ends the turn on the bridge ("Got it.") and
+        never calls ``etch_memory``. One ``generate_reply`` asks it to
+        call the tool. The model still stages. This does not write.
+        """
+        if self._mem.pending is not None or self._mem.merge_armed:
+            return
+        request = self._remember_request()
+        folded = _norm_match(request)
+        if not folded or folded == self._nudged_for:
+            return
+        generate = getattr(self._session, "generate_reply", None)
+        if not callable(generate):
+            return
+        self._nudged_for = folded
+        try:
+            generate(instructions=_ETCH_NUDGE)
+        except Exception as exc:
+            log.warning("holder confirm: etch nudge failed: %s", exc)
 
     def _on_user_input(self, ev: Any) -> None:
         """Final transcripts only. Interim replies do not save or drop."""
         transcript = str(getattr(ev, "transcript", "") or "")
         item_id = getattr(ev, "item_id", None)
+        if getattr(ev, "is_final", False) and transcript.strip():
+            self._last_user_final = transcript
         if not getattr(ev, "is_final", False):
             if transcript.strip():
                 self._open_text = transcript
