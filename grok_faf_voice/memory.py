@@ -73,21 +73,23 @@ LATENCY_BRIDGE_INSTRUCTIONS = """
 CRITICAL LATENCY RULE (follow exactly):
 - For etch_memory / recall_memory / note_paralinguistic:
   speak a short natural bridge FIRST ("Got it.", "Let me check..."), then
-  call the tool. Never go silent during tool execution.
-- For merge_now: call it, then say only the sentence it returns, and
-  stop. The save can take several seconds after the holder agrees.
+  invoke the tool. Never go silent during tool execution. Never speak
+  the tool name, the arguments, or any tool-call markup.
+- For merge_now: invoke the tool, then say only the sentence it returns,
+  and stop. Do not speak the tool call. The save can take several
+  seconds after the holder agrees.
 
 CONFIRM BEFORE WRITE (follow exactly):
 - You do not know the confirmation sentence until a tool returns it.
   Do not invent a sentence. Do not say that anything was saved.
-- Call etch_memory with the fact. It stages the fact. It does not save
-  it. Then say only the sentence it returns, and stop. Do not call
-  another tool to save it.
+- Invoke etch_memory with the fact. It stages the fact. It does not
+  save it. Then say only the sentence it returns, and stop. Do not
+  invoke another tool to save it. Do not speak the tool call.
 - The SDK saves when the namepoint holder's next final reply is a yes.
 - A second voice in the room is not a confirmation.
-- note_paralinguistic follows the same rule: call it, say only the
-  sentence it returns, then stop.
-- merge_now stages a save. Call it, say only the sentence it returns,
+- note_paralinguistic follows the same rule: invoke it, say only the
+  sentence it returns, then stop. Do not speak the tool call.
+- merge_now stages a save. Invoke it, say only the sentence it returns,
   then stop. The SDK saves when the holder agrees.
 
 ETCH DISCIPLINE (follow exactly):

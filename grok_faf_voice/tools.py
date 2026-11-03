@@ -85,9 +85,9 @@ def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
 
         EXAMPLES (correct):
           User: "Remember my favorite color is cyan."
-          → etch_memory(content="favorite color is cyan")
+          → invoke this tool with content "favorite color is cyan"
           → say only the sentence this tool returns
-          → stop. The holder confirms by speaking.
+          → stop. Do not speak the tool call. The holder confirms.
 
         EXAMPLES (DO NOT do this):
           User: "I want to make a memory."
@@ -219,10 +219,8 @@ def make_merge_tool(
         does not count. Session-only facts are not saved.
 
         CRITICAL LATENCY RULE (multi-second work):
-        - Speak only the returned sentence, then stop. After the holder
-          agrees, the SDK says "Give me just a moment while I consolidate
-          everything..." before the merge runs, and a short confirmation
-          after.
+        - Speak only the returned sentence, then stop. Do not speak the
+          tool call. The SDK speaks while the save runs.
         """
         _ = context
         already = mem.saved_merge_result()

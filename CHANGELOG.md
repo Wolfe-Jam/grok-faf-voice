@@ -53,9 +53,10 @@ Proposed. Not published.
 - **Session instructions are the standing string**, capped at 2048 UTF-8
   bytes on a newline. `recall_for_prompt()` is not called at open, and
   its body is not placed in `instructions`. The latency bridge remains
-  when `etch=True`, and it tells the model to call the tool, say only
+  when `etch=True`, and it tells the model to invoke the tool, say only
   the sentence the tool returns, and stop. The model does not know that
-  sentence until the tool returns it. The SDK confirms. The model does not.
+  sentence until the tool returns it, and it must not speak the tool
+  call. The SDK confirms. The model does not.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
   and discards the in-memory scratchpad at session end. `merge_now`
   stages a save. The same listener writes after the agent says
