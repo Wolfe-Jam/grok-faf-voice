@@ -98,10 +98,6 @@ def test_xai_realtime_model_accepts_voice_and_turn_detection():
         "RealtimeModel no longer accepts `turn_detection=` — "
         "README example would fail at construction"
     )
-    assert "reasoning" in params, (
-        "RealtimeModel no longer accepts `reasoning=` — "
-        "the effort pin would not reach the socket"
-    )
 
 
 # ----------------------------------------------------------------

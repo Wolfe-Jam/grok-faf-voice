@@ -407,6 +407,44 @@ async def test_spoken_etch_call_stages_and_a_later_yes_saves():
     assert mem.pending is None
 
 
+def test_spoken_invoke_markup_stages_the_fact():
+    """Live tally: the coffee turn spoke <invoke> and nothing was staged."""
+    from grok_faf_voice.tools import _spoken_etch_fact
+
+    mem = FAFMemory("grok", api_key="k")
+    said: list[str] = []
+
+    class _Talks:
+        def __init__(self) -> None:
+            self.history = _Hist([
+                _Msg("user", "Could you remember that I take my coffee black?"),
+            ])
+
+        def say(self, text: str, **_kwargs: object) -> None:
+            said.append(text)
+
+        def generate_reply(self, **_kwargs: object) -> None:
+            raise AssertionError("spoken etch must not also nudge")
+
+    listener = HolderConfirm(mem, _Talks())
+    listener._open_text = "Could you remember that I take my coffee black?"
+    listener._open_item = "req-1"
+    spoken_call = (
+        "Got it. <invoke name=etch_memory> "
+        "<parameter name=content>takes coffee black</parameter> </invoke>"
+    )
+    assert _spoken_etch_fact(spoken_call) == "takes coffee black"
+    quoted = (
+        '<invoke name="etch_memory">'
+        "<parameter name='content'>favorite color is cyan</parameter></invoke>"
+    )
+    assert _spoken_etch_fact(quoted) == "favorite color is cyan"
+    listener._on_item(SimpleNamespace(item=_Msg("assistant", spoken_call)))
+    assert mem.pending is not None
+    assert mem.pending["content"] == "takes coffee black"
+    assert said == [mem.pending["spoken"]]
+
+
 def test_bridge_without_a_tool_asks_once_for_etch():
     """Live 2026-11-03: the model said "Got it." and never called etch."""
     mem = FAFMemory("grok", api_key="k")

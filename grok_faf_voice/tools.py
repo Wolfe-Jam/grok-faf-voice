@@ -425,6 +425,7 @@ def _last_user_text(messages: list[Any]) -> str:
     return ""
 
 
+# Workaround for the "none" behaviour, reported to xAI. Not the main path.
 _SPOKEN_ETCH = re.compile(
     r"<tool_call>\s*etch_memory\b.*?<arg_key>\s*content\s*</arg_key>\s*"
     r"<arg_value>\s*(.*?)\s*</arg_value>",
@@ -434,15 +435,19 @@ _SPOKEN_ETCH_CALL = re.compile(
     r"etch_memory\s*\(\s*content\s*=\s*[\"'](.*?)[\"']\s*\)",
     re.IGNORECASE | re.DOTALL,
 )
+_SPOKEN_ETCH_INVOKE = re.compile(
+    r"<invoke\s+name\s*=\s*[\"']?etch_memory[\"']?\s*>.*?"
+    r"<parameter\s+name\s*=\s*[\"']?content[\"']?\s*>(.*?)</parameter>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _spoken_etch_fact(text: str) -> str:
     """The fact inside a tool call the model spoke instead of invoking.
 
-    grok-voice-3.0 sometimes puts ``etch_memory`` in the audio transcript.
-    That is the model's stage. It is not a general fact parser.
+    Safety net for a rare slip. It is not a general fact parser.
     """
-    for pattern in (_SPOKEN_ETCH, _SPOKEN_ETCH_CALL):
+    for pattern in (_SPOKEN_ETCH, _SPOKEN_ETCH_CALL, _SPOKEN_ETCH_INVOKE):
         match = pattern.search(text)
         if match is None:
             continue

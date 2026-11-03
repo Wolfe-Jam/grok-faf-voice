@@ -75,14 +75,9 @@ Proposed. Not published.
   the scratchpad at ephemeral priority and does not etch. There is no
   voice-id gate and no namepoint for a child.
 - **Realtime model is pinned to `grok-voice-3.0`.** `grok-voice-latest`
-  is not passed. `reasoning.effort` is set to `none` via
-  `RealtimeReasoning.model_construct`, because the LiveKit plugin literal
-  (`minimal|low|medium|high|xhigh`) rejects `"none"`. The value is stored
-  on the model options and the realtime engine copies `session.reasoning`
-  onto the outbound session. A live session on 2026-11-03 accepted
-  `reasoning.effort` `none` (`session.updated` echoed it). The built-in
-  voice `ara` was accepted (`session.created` reported `xai_ara`).
-  Built-in voice ids are sent lowercase.
+  is not passed. Built-in voice ids are sent lowercase.
+- Reasoning is left to the server default; effort "none" made
+  grok-voice-3.0 speak tool calls aloud (4/5 turns in a live tally).
 - README "How it works" matches this open and this write rule. The
   ElevenLabs / Hume "upcoming releases" line is gone. `CONTRIBUTING.md`
   keeps those backends as backlog.

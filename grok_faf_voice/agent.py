@@ -54,11 +54,6 @@ log = logging.getLogger("grok_faf_voice.agent")
 # Pinned. grok-voice-latest is an alias that has already moved twice.
 VOICE_MODEL = "grok-voice-3.0"
 
-# Set on purpose. The platform default is "high". "none" is what a
-# latency-sensitive open wants. The plugin's RealtimeReasoning literal
-# rejects "none", so reasoning_for_session() uses model_construct.
-REASONING_EFFORT = "none"
-
 # Open budget for the standing string. The server stores up to 16384.
 # That storage cap is not the budget for the first reply.
 OPEN_STANDING_BYTES = 2048
@@ -141,20 +136,6 @@ def voice_on_the_wire(voice: str) -> str:
     if lowered in {name.lower() for name in SUPPORTED_VOICES}:
         return lowered
     return voice
-
-
-def reasoning_for_session() -> object:
-    """A reasoning payload whose effort is ``REASONING_EFFORT``.
-
-    ``RealtimeReasoning(effort="none")`` raises, because the plugin
-    literal has no ``none``. ``model_construct`` stores the value the
-    realtime engine copies onto the session. A live session on
-    2026-11-03 accepted ``effort`` ``none``. The lowercase voice
-    ``ara`` came back as ``xai_ara``.
-    """
-    from openai.types.realtime import RealtimeReasoning
-
-    return RealtimeReasoning.model_construct(effort=REASONING_EFFORT)
 
 
 def _is_valid_voice(voice: str) -> bool:
@@ -579,13 +560,12 @@ class VoiceAgent:
         @server.rtc_session()
         async def entrypoint(ctx: agents.JobContext) -> None:
             # livekit-plugins-xai 1.8.3 calls .create_response on
-            # turn_detection. A plain dict raises. reasoning uses
-            # model_construct because the plugin literal rejects "none".
+            # turn_detection. A plain dict raises. Reasoning is omitted.
+            # The server default applies.
             session: AgentSession = AgentSession(
                 llm=xai.realtime.RealtimeModel(
                     model=VOICE_MODEL,
                     voice=voice_on_the_wire(voice),
-                    reasoning=reasoning_for_session(),
                     turn_detection=TurnDetection(
                         type="server_vad",
                         threshold=0.85,

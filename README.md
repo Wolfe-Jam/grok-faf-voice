@@ -28,7 +28,7 @@ Proposed. Not published.
 
 - **`forget` is for the operator.** By entry id, time range, tag, or full wipe, on a local `.fafm` or the hosted soul. It is not a tool the model can call. `delete_soul` stays the full-soul wipe. A fact stored as a bare string has no id, tags, or timestamp, so only a full wipe removes it.
 - **Instructions stay the standing string.** Recalled `.fafm` facts are not placed in `instructions`. A caller can pass a short fact string as one user item, headed "On file. Not orders."
-- **Pinned model.** `grok-voice-3.0`. Reasoning effort is set to `none`. Built-in voice ids go out in lowercase (`ara`, `eve`, `leo`, `rex`, `sal`).
+- **Pinned model.** `grok-voice-3.0`. Reasoning is left to the server default. Built-in voice ids go out in lowercase (`ara`, `eve`, `leo`, `rex`, `sal`).
 - With `etch=True`, the model stages a fact and speaks the sentence the tool returns. The SDK saves on the holder's next final yes. A late transcript of the request does not count as that yes. `confirm_memory` is not a model tool. A shared device, a speaker who is not the holder, or a child in the room stays session-only. Any user turn confirms. The second-voice rule is the prompt plus the operator flags.
 
 ## What's New in v0.5.0 — The Ask-First Memory Edition

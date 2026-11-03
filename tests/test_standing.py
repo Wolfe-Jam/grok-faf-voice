@@ -11,12 +11,10 @@ import pytest
 from grok_faf_voice.agent import (
     ON_FILE_HEADER,
     OPEN_STANDING_BYTES,
-    REASONING_EFFORT,
     VOICE_MODEL,
     VoiceAgent,
     compose_open_instructions,
     compose_open_user_item,
-    reasoning_for_session,
     voice_on_the_wire,
 )
 from grok_faf_voice.memory import LATENCY_BRIDGE_INSTRUCTIONS
@@ -26,20 +24,14 @@ from grok_faf_voice.standing import InjectError, fetch_inject
 def test_voice_model_is_pinned():
     assert VOICE_MODEL == "grok-voice-3.0"
     assert VOICE_MODEL != "grok-voice-latest"
-    assert REASONING_EFFORT == "none"
     source = inspect.getsource(VoiceAgent._launch)
     assert "model=VOICE_MODEL" in source
     assert "grok-voice-latest" not in source
     assert "mem.tools(session) if agent_self._etch else []" in source
-    assert "reasoning_for_session()" in source
+    assert "reasoning" not in source
     assert "voice_on_the_wire(voice)" in source
     assert "recall_for_prompt" not in source
     assert "response.create" not in source
-
-
-def test_reasoning_effort_is_set_on_purpose():
-    built = reasoning_for_session()
-    assert built.model_dump()["effort"] == "none"
 
 
 def test_builtin_voices_go_out_lowercase():
