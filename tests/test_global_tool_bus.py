@@ -312,11 +312,11 @@ async def test_wrapper_fires_through_function_tool_call_path():
 
 
 async def test_factory_tools_still_emit_domain_events_after_global_wrap():
-    """confirm_memory emits paralinguistic.detected after a staged marker
-    is confirmed. The global wrapper must not silence that event.
+    """The confirm listener emits paralinguistic.detected after a staged
+    marker is confirmed. The global wrapper must not silence that event.
     note_paralinguistic itself only stages.
     """
-    from grok_faf_voice.tools import make_confirm_tool, make_paralinguistic_tool
+    from grok_faf_voice.tools import HolderConfirm, make_paralinguistic_tool
 
     mem = FAFMemory("grok", api_key="k")
     await mem.start_bus()
@@ -334,7 +334,6 @@ async def test_factory_tools_still_emit_domain_events_after_global_wrap():
     mem.etch = _stub_etch  # type: ignore[method-assign]
 
     note = make_paralinguistic_tool(mem)
-    confirm = make_confirm_tool(mem)
     assert getattr(note, "_bus_wrapped", False) is True
 
     class _Msg:
@@ -342,20 +341,9 @@ async def test_factory_tools_still_emit_domain_events_after_global_wrap():
             self.role = role
             self.content = content
 
-    class _Hist:
-        def __init__(self, messages: list) -> None:
-            self._messages = messages
-
-        def messages(self) -> list:
-            return self._messages
-
-    class _Session:
-        def __init__(self, messages: list) -> None:
-            self.history = _Hist(messages)
-
     class _Ctx:
-        def __init__(self, messages: list | None = None) -> None:
-            self.session = _Session(messages or [])
+        def __init__(self) -> None:
+            pass
 
     await note._func(_Ctx(), "tone", "calm")
     await asyncio.sleep(0.05)
@@ -363,11 +351,10 @@ async def test_factory_tools_still_emit_domain_events_after_global_wrap():
 
     pending = mem.pending
     assert pending is not None
-    ctx = _Ctx([
-        _Msg("assistant", pending["spoken"]),
-        _Msg("user", "yes"),
-    ])
-    await confirm._func(ctx, pending["content"])
+    await HolderConfirm(mem, None).apply_final(
+        "yes",
+        messages=[_Msg("assistant", pending["spoken"])],
+    )
     await asyncio.sleep(0.05)
 
     assert len(received) == 1

@@ -14,7 +14,7 @@ foreground hold for full UX coverage.
 Generic ``tool.about_to_run`` and ``tool.completed`` events come from
 ``enable_global_tool_bus(memory, agent)`` — call it once after the
 Agent is constructed to give the Bus full visibility over EVERY tool
-the agent runs (FAFMemory's own five AND any user-defined tools).
+the agent runs (FAFMemory's own four AND any user-defined tools).
 The factory output is marked ``_bus_wrapped=True`` so the global
 wrapper skips re-wrapping; only domain-specific events
 (``soul.updated``, ``paralinguistic.detected``, ``merge.starting``,
@@ -31,6 +31,8 @@ Use via `FAFMemory.tools(session)`:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from functools import wraps
 from typing import TYPE_CHECKING, Any
@@ -38,6 +40,8 @@ from typing import TYPE_CHECKING, Any
 from livekit.agents import RunContext, function_tool
 
 from grok_faf_voice.context_bus import BusEvent, ContextBus
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from livekit.agents import Agent, AgentSession
@@ -75,14 +79,15 @@ def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
         the user's meta-statement about wanting to remember something.
 
         After this returns, say the exact sentence it gives you, then
-        wait. Call confirm_memory only after the namepoint holder
-        agrees. A second voice in the room is not a confirmation.
+        stop. Do not call another tool to save it. The SDK saves when
+        the namepoint holder's next final reply is a yes. A second
+        voice in the room is not a confirmation.
 
         EXAMPLES (correct):
           User: "Remember my favorite color is cyan."
           → etch_memory(content="favorite color is cyan")
           → say exactly: "I'll remember this: favorite color is cyan."
-          → wait for the holder to confirm, then confirm_memory.
+          → stop. The holder confirms by speaking.
 
         EXAMPLES (DO NOT do this):
           User: "I want to make a memory."
@@ -97,56 +102,11 @@ def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
         _ = context
         spoken = mem.stage_memory(content, type="memory")
         return (
-            "Staged, not saved. Say this exact sentence, then wait for "
-            f"the namepoint holder to confirm: {spoken}"
+            "Staged, not saved. Say this exact sentence, then stop: "
+            f"{spoken}"
         )
 
     return _mark_bus_wrapped(etch_memory)
-
-
-def make_confirm_tool(mem: FAFMemory, bus: ContextBus | None = None):
-    """Return an @function_tool that writes only after speak + confirm.
-
-    ``holder_confirmed`` is not a parameter. The tool reads the
-    transcript. A call with no transcript does not write.
-    """
-    from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
-
-    bus = bus or mem.bus
-
-    @function_tool
-    async def confirm_memory(context: RunContext, content: str) -> str:
-        """Save a staged fact after the holder confirms it.
-
-        Call this only after your last sentence was the exact line
-        "I'll remember this: <fact>." and the namepoint holder's next
-        line is a short yes. A question after that sentence does not
-        count. If you call this on your own, nothing is saved.
-
-        ``content`` must be the staged fact, unchanged.
-        """
-        pending = mem.pending
-        confirmed = holder_confirmed(
-            _messages_from(getattr(context, "session", None)),
-            pending["spoken"] if pending else "",
-        )
-        try:
-            result = await mem.commit_staged(
-                content, holder_confirmed=confirmed
-            )
-        except FAFAuthRequiredError as e:
-            return str(e)
-        except FAFEtchError as e:
-            return f"Not saved: {e}"
-        if pending and pending.get("type") == "paralinguistic":
-            await bus.emit_paralinguistic_detected(
-                marker_type=str(pending.get("marker_type") or ""),
-                value=str(pending.get("marker_value") or content),
-                topic=pending.get("topic"),
-            )
-        return result
-
-    return _mark_bus_wrapped(confirm_memory)
 
 
 def make_recall_tool(mem: FAFMemory, bus: ContextBus | None = None):
@@ -208,8 +168,8 @@ def make_paralinguistic_tool(mem: FAFMemory, bus: ContextBus | None = None):
           marker_type="interruption_pattern", value="frequent"
 
         Don't fabricate markers. Only call when the cue is genuinely
-        observable. This stages the marker. It is saved only after you
-        speak the exact sentence and the namepoint holder confirms.
+        observable. This stages the marker. Say the exact sentence it
+        returns, then stop. The SDK saves when the holder agrees.
 
         CRITICAL LATENCY RULE (must follow):
         - Speak a short micro-bridge FIRST ("Noted the tone."), then
@@ -226,8 +186,8 @@ def make_paralinguistic_tool(mem: FAFMemory, bus: ContextBus | None = None):
             mem.pending["marker_value"] = value
             mem.pending["topic"] = topic
         return (
-            "Staged, not saved. Say this exact sentence, then wait for "
-            f"the namepoint holder to confirm: {spoken}"
+            "Staged, not saved. Say this exact sentence, then stop: "
+            f"{spoken}"
         )
 
     return _mark_bus_wrapped(note_paralinguistic)
@@ -238,66 +198,46 @@ def make_merge_tool(
     session: AgentSession,
     bus: ContextBus | None = None,
 ):
-    """Return an @function_tool that promotes scratchpad → soul.
+    """Return an @function_tool that stages a scratchpad save.
 
-    The model says ``SAVE_SPOKEN`` and waits. This tool writes only
-    after that sentence is the last assistant line before the holder's
-    yes. Session-only scratchpad entries are not promoted.
-
-    Pattern B (heavy tool): after that confirm, it closes over
-    ``session`` to emit a verbal hold via ``session.say()`` before the
-    multi-second merge, then a short confirmation after.
+    The model says ``SAVE_SPOKEN`` and stops. The SDK listener writes
+    when the holder's next final reply is a yes and that sentence ends
+    the last assistant message. Saying the sentence and then hearing
+    yes also saves, which is the live order. Session-only scratchpad
+    entries are not promoted. This tool does not read the transcript.
     """
-    from grok_faf_voice.memory import (
-        FAFAuthRequiredError,
-        FAFEtchError,
-        FAFMergeError,
-    )
-
-    bus = bus or mem.bus
+    _ = bus or mem.bus
+    _ = session
 
     @function_tool
     async def merge_now(context: RunContext) -> str:
-        """Save the scratchpad after the holder confirms.
+        """Stage a save of what we discussed. This does not write.
 
-        Say exactly "I'll save what we discussed." and wait. Call this
-        only after the namepoint holder agrees. A yes to a later
-        question does not count. Session-only facts are not saved.
+        Say exactly "I'll save what we discussed." and then stop.
+        The SDK saves when the namepoint holder's next final reply is
+        a yes. A yes to a later question does not count. Session-only
+        facts are not saved.
 
-        CRITICAL LATENCY RULE (multi-second tool):
-        - After the holder agrees, this SDK says "Give me just a
-          moment while I consolidate everything..." before the merge
-          runs, and a short confirmation after.
+        CRITICAL LATENCY RULE (multi-second work):
+        - Speak the sentence, then stop. After the holder agrees, the
+          SDK says "Give me just a moment while I consolidate
+          everything..." before the merge runs, and a short
+          confirmation after.
         """
         _ = context
-        messages = _messages_from(getattr(context, "session", None))
-        if not holder_confirmed(messages, SAVE_SPOKEN):
+        already = mem.saved_merge_result()
+        if already:
+            return already
+        if mem.pending is not None:
             return (
-                "Not saved. Say this exact sentence, then wait for the "
-                f"namepoint holder to confirm: {SAVE_SPOKEN}"
+                "A fact is waiting for the holder to confirm. "
+                "Nothing else was saved."
             )
-        try:
-            await session.say(
-                "Give me just a moment while I consolidate everything..."
-            )
-            await bus.emit_merge_starting("user-initiated merge_now")
-            result: dict[str, Any] = await mem.merge(strategy="grok-decides")
-            await bus.emit_merge_completed(result=result)
-            promoted = result.get("promoted", 0)
-            merged = result.get("merged", 0)
-            total = promoted + merged
-            if total > 0:
-                await session.say(f"All set — saved {total} items.")
-            else:
-                await session.say("All tidy — nothing new to save this time.")
-            return (
-                f"Saved {promoted} memories. "
-                f"{result.get('kept_ephemeral', result.get('discarded', 0))} kept ephemeral."
-            )
-        except FAFAuthRequiredError as e:
-            return str(e)
-        except (FAFEtchError, FAFMergeError) as e:
-            return f"Could not save: {e}"
+        mem.arm_merge()
+        return (
+            "Staged, not saved. Say this exact sentence, then stop: "
+            f"{SAVE_SPOKEN}"
+        )
 
     return _mark_bus_wrapped(merge_now)
 
@@ -460,6 +400,197 @@ def holder_confirmed(messages: list[Any], spoken: str) -> bool:
     if previous is None:
         return False
     return _ends_with_spoken(_text_of(previous), spoken)
+
+
+def _last_assistant_text(messages: list[Any]) -> str:
+    """Text of the latest assistant message, or an empty string."""
+    for message in reversed(messages):
+        if _role_of(message) in {"assistant", "agent"}:
+            return _text_of(message)
+    return ""
+
+
+def _subscribe(session: Any, event: str, callback: Any) -> None:
+    """Register ``callback`` on a LiveKit session, or a decorator stand-in."""
+    on = getattr(session, "on", None)
+    if not callable(on):
+        return
+    try:
+        on(event, callback)
+    except TypeError:
+        on(event)(callback)
+
+
+class HolderConfirm:
+    """Save a staged fact from the holder's next final transcript.
+
+    The model only stages. This listener is the confirm. Attach it with
+    :meth:`FAFMemory.attach_confirm`. Interim transcripts do nothing.
+    A final yes saves only when the last assistant message ends with
+    the staged sentence. Any other final reply drops the stage.
+    """
+
+    def __init__(self, mem: FAFMemory, session: Any | None = None) -> None:
+        self._mem = mem
+        self._session = session
+        self._attached = False
+        self._heard_assistant = ""
+
+    @property
+    def session(self) -> Any | None:
+        return self._session
+
+    def attach(self) -> None:
+        """Listen for ``user_input_transcribed``. Idempotent."""
+        if self._attached or self._session is None:
+            return
+        _subscribe(self._session, "user_input_transcribed", self._on_user_input)
+        _subscribe(self._session, "conversation_item_added", self._on_item)
+        self._attached = True
+
+    def _on_item(self, ev: Any) -> None:
+        item = getattr(ev, "item", None)
+        if item is None:
+            return
+        if _role_of(item) not in {"assistant", "agent"}:
+            return
+        text = _text_of(item)
+        if text.strip():
+            self._heard_assistant = text
+
+    def _on_user_input(self, ev: Any) -> None:
+        """Final transcripts only. Interim replies do not save or drop."""
+        if not getattr(ev, "is_final", False):
+            return
+        transcript = str(getattr(ev, "transcript", "") or "")
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self.apply_final(transcript))
+        task.add_done_callback(self._log_task)
+
+    def _log_task(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            log.warning("holder confirm failed: %s", exc)
+
+    def _assistant_text(self, messages: list[Any] | None) -> str:
+        msgs = messages if messages is not None else _messages_from(self._session)
+        text = _last_assistant_text(msgs)
+        if text.strip():
+            return text
+        return self._heard_assistant
+
+    async def _say(self, text: str) -> None:
+        say = getattr(self._session, "say", None)
+        if not callable(say):
+            return
+        await say(text)
+
+    async def apply_final(
+        self,
+        transcript: str,
+        *,
+        messages: list[Any] | None = None,
+    ) -> str:
+        """Decide the staged fact, or a scratchpad save, from one final line.
+
+        ``transcript`` is the final user-input-transcribed text. It is
+        not read from session history. The last assistant message is.
+        """
+        if self._mem.pending is not None:
+            return await self._resolve_fact(transcript, messages)
+        return await self._resolve_merge(transcript, messages)
+
+    async def _resolve_fact(
+        self,
+        transcript: str,
+        messages: list[Any] | None,
+    ) -> str:
+        pending = self._mem.pending
+        if pending is None:
+            return ""
+        assistant = self._assistant_text(messages)
+        if _is_yes(transcript) and _ends_with_spoken(assistant, pending["spoken"]):
+            return await self._commit(pending)
+        self._mem.drop_pending()
+        log.info("holder confirm: dropped")
+        await self._say("Nothing was saved.")
+        return self._mem.note_confirm_result("Nothing was saved.")
+
+    async def _commit(self, pending: dict[str, Any]) -> str:
+        from grok_faf_voice.memory import FAFAuthRequiredError, FAFEtchError
+
+        try:
+            result = await self._mem.commit_staged(
+                pending["content"], holder_confirmed=True
+            )
+        except FAFAuthRequiredError as exc:
+            return self._mem.note_confirm_result(str(exc))
+        except FAFEtchError as exc:
+            return self._mem.note_confirm_result(f"Not saved: {exc}")
+        if pending.get("type") == "paralinguistic":
+            await self._mem.bus.emit_paralinguistic_detected(
+                marker_type=str(pending.get("marker_type") or ""),
+                value=str(pending.get("marker_value") or pending["content"]),
+                topic=pending.get("topic"),
+            )
+        log.info("holder confirm: saved")
+        return self._mem.note_confirm_result(result)
+
+    async def _resolve_merge(
+        self,
+        transcript: str,
+        messages: list[Any] | None,
+    ) -> str:
+        assistant = self._assistant_text(messages)
+        armed = self._mem.merge_armed
+        matches = _is_yes(transcript) and _ends_with_spoken(assistant, SAVE_SPOKEN)
+        if matches:
+            self._mem.clear_merge_arm()
+            return await self._run_merge()
+        if armed:
+            self._mem.clear_merge_arm()
+            log.info("holder confirm: dropped")
+            await self._say("Nothing was saved.")
+            return self._mem.note_confirm_result("Nothing was saved.")
+        return ""
+
+    async def _run_merge(self) -> str:
+        from grok_faf_voice.memory import (
+            FAFAuthRequiredError,
+            FAFEtchError,
+            FAFMergeError,
+        )
+
+        try:
+            await self._say(
+                "Give me just a moment while I consolidate everything..."
+            )
+            await self._mem.bus.emit_merge_starting("user-initiated merge_now")
+            result: dict[str, Any] = await self._mem.merge(strategy="grok-decides")
+            await self._mem.bus.emit_merge_completed(result=result)
+            promoted = result.get("promoted", 0)
+            merged = result.get("merged", 0)
+            total = promoted + merged
+            if total > 0:
+                await self._say(f"All set — saved {total} items.")
+            else:
+                await self._say("All tidy — nothing new to save this time.")
+            text = (
+                f"Saved {promoted} memories. "
+                f"{result.get('kept_ephemeral', result.get('discarded', 0))} "
+                "kept ephemeral."
+            )
+        except FAFAuthRequiredError as exc:
+            return self._mem.note_confirm_result(str(exc))
+        except (FAFEtchError, FAFMergeError) as exc:
+            return self._mem.note_confirm_result(f"Could not save: {exc}")
+        log.info("holder confirm: saved")
+        return self._mem.note_confirm_result(self._mem.remember_merge_result(text))
 
 
 # ----------------------------------------------------------------

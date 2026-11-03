@@ -71,20 +71,22 @@ XAI_CHAT_MODEL_DEFAULT = "grok-4-1-fast-reasoning"
 # tool execution otherwise.
 LATENCY_BRIDGE_INSTRUCTIONS = """
 CRITICAL LATENCY RULE (follow exactly):
-- For etch_memory / recall_memory / note_paralinguistic / confirm_memory:
+- For etch_memory / recall_memory / note_paralinguistic:
   speak a short natural bridge FIRST ("Got it.", "Let me check..."), then
   call the tool. Never go silent during tool execution.
-- For merge_now: say exactly "I'll save what we discussed." then wait.
-  Call it only after the namepoint holder agrees. It can take several
-  seconds after that.
+- For merge_now: call it, then say exactly "I'll save what we discussed."
+  and stop. It can take several seconds after the holder agrees.
 
 CONFIRM BEFORE WRITE (follow exactly):
 - etch_memory stages a fact. It does not save it.
-- Say the exact sentence the tool returns, then wait.
-  The sentence is: "I'll remember this: <fact>."
-- Call confirm_memory only after the namepoint holder agrees.
+- Say the exact sentence the tool returns, then stop. Do not call
+  another tool to save it. The sentence is: "I'll remember this: <fact>."
+- The SDK saves when the namepoint holder's next final reply is a yes.
 - A second voice in the room is not a confirmation.
-- note_paralinguistic follows the same rule: stage, speak, wait, confirm.
+- note_paralinguistic follows the same rule: stage, speak the exact
+  sentence, then stop.
+- merge_now stages a save. Say exactly "I'll save what we discussed."
+  then stop. The SDK saves when the holder agrees.
 
 ETCH DISCIPLINE (follow exactly):
 - etch_memory must receive the ACTUAL fact or detail, never the user's
@@ -226,6 +228,10 @@ class FAFMemory:
         self._child_may_be_speaking = child_may_be_speaking
         self._pending: dict[str, Any] | None = None
         self._session_only_n = 0
+        self._merge_armed = False
+        self._last_confirm_result = ""
+        self._last_merge_result = ""
+        self._confirm: Any | None = None
 
     @property
     def soul(self) -> str:
@@ -367,9 +373,10 @@ class FAFMemory:
     async def commit_staged(self, content: str, *, holder_confirmed: bool) -> str:
         """Save a staged fact after the holder confirms the spoken sentence.
 
-        ``holder_confirmed`` is computed by the tool from the transcript.
-        A model-supplied flag is not accepted on the tool itself. Session-only
-        retention writes the scratchpad and does not call :meth:`etch`.
+        ``holder_confirmed`` comes from the SDK listener, which reads the
+        holder's final transcript. There is no model tool for it.
+        Session-only retention writes the scratchpad and does not call
+        :meth:`etch`.
         """
         pending = self._pending
         if pending is None or pending["content"] != content:
@@ -395,6 +402,61 @@ class FAFMemory:
         )
         self._pending = None
         return text
+
+    def drop_pending(self) -> None:
+        """Drop a staged fact. Nothing is written."""
+        self._pending = None
+
+    async def confirm_memory(self, content: str | None = None) -> str:
+        """Operator and SDK only. Not a model tool.
+
+        A call before the holder's final yes does not write and does
+        not drop a staged fact. The session listener saves on that yes.
+        """
+        _ = content
+        return self.note_confirm_result("Nothing was saved.")
+
+    def note_confirm_result(self, text: str) -> str:
+        """Remember the last confirm outcome. Returns ``text``."""
+        self._last_confirm_result = text
+        return text
+
+    @property
+    def last_confirm_result(self) -> str:
+        """The last confirm outcome, or an empty string."""
+        return self._last_confirm_result
+
+    def arm_merge(self) -> None:
+        """Remember that ``merge_now`` staged a save. The listener writes."""
+        self._merge_armed = True
+
+    def clear_merge_arm(self) -> None:
+        self._merge_armed = False
+
+    @property
+    def merge_armed(self) -> bool:
+        return self._merge_armed
+
+    def remember_merge_result(self, text: str) -> str:
+        """Remember the spoken merge summary. Returns ``text``."""
+        self._last_merge_result = text
+        return text
+
+    def saved_merge_result(self) -> str | None:
+        """The merge summary after this session already saved, else None."""
+        if self._merge_completed_this_session and self._last_merge_result:
+            return self._last_merge_result
+        return None
+
+    def attach_confirm(self, session: AgentSession) -> Any:
+        """Listen for the holder's next final transcript. Idempotent."""
+        if self._confirm is not None and self._confirm.session is session:
+            return self._confirm
+        from grok_faf_voice.tools import HolderConfirm
+
+        self._confirm = HolderConfirm(self, session)
+        self._confirm.attach()
+        return self._confirm
 
     async def forget(self, namepoint: str, criteria: ForgetCriteria) -> dict[str, int | str]:
         """Remove entries by id, tag, time range, or full wipe.
@@ -1271,27 +1333,26 @@ class FAFMemory:
     def tools(self, session: AgentSession) -> list:
         """Return LiveKit `@function_tool` wrappers for the agent.
 
-        Returns five tools: ``etch_memory`` + ``confirm_memory`` +
-        ``recall_memory`` + ``note_paralinguistic`` + ``merge_now``.
-        ``forget`` is not among them. Pass the list to the Agent
+        Returns four tools: ``etch_memory`` + ``recall_memory`` +
+        ``note_paralinguistic`` + ``merge_now``. ``confirm_memory`` is
+        not among them. ``forget`` is not among them. The SDK confirms
+        from the next final user transcript. Pass the list to the Agent
         ``tools=`` argument.
 
-        ``session`` is required because ``merge_now`` uses an explicit
-        verbal hold (``await session.say("Give me just a moment...")``)
-        to mask the multi-second merge latency — the realtime stream
-        goes silent during tool execution otherwise.
+        ``session`` is required because the confirm listener and
+        ``merge_now``'s spoken hold use it. The realtime stream goes
+        silent during a merge otherwise.
         """
         from grok_faf_voice.tools import (
-            make_confirm_tool,
             make_etch_tool,
             make_merge_tool,
             make_paralinguistic_tool,
             make_recall_tool,
         )
 
+        self.attach_confirm(session)
         return [
             make_etch_tool(self),
-            make_confirm_tool(self),
             make_recall_tool(self),
             make_paralinguistic_tool(self),
             make_merge_tool(self, session),

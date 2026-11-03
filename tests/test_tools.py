@@ -54,29 +54,26 @@ def test_make_merge_tool_returns_object():
 
 def test_tools_factory_set_distinct():
     """The memory tools are distinct objects. forget is not one of them."""
-    from grok_faf_voice.tools import make_confirm_tool
-
     mem = FAFMemory("grok")
     etch = make_etch_tool(mem)
-    confirm = make_confirm_tool(mem)
     recall = make_recall_tool(mem)
     para = make_paralinguistic_tool(mem)
     merge = make_merge_tool(mem, _FakeSession())
-    assert len({id(etch), id(confirm), id(recall), id(para), id(merge)}) == 5
+    assert len({id(etch), id(recall), id(para), id(merge)}) == 4
 
 
 def test_fafmemory_tools_returns_the_set_without_forget():
-    """tools(session) exposes confirm, and does not expose forget."""
+    """tools(session) does not expose confirm_memory or forget."""
     mem = FAFMemory("grok")
     tools = mem.tools(_FakeSession())
-    assert len(tools) == 5
+    assert len(tools) == 4
     names = {t.info.name for t in tools}
     assert names == {
         "etch_memory",
-        "confirm_memory",
         "recall_memory",
         "note_paralinguistic",
         "merge_now",
     }
+    assert "confirm_memory" not in names
     assert "forget" not in names
     assert not any("forget" in name for name in names)

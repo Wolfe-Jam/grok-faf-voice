@@ -72,8 +72,8 @@ async def entrypoint(ctx: agents.JobContext):
 
     # Open on the project prompt and the tool rules. The soul body is
     # not placed in instructions. recall_memory is the long tail, on a
-    # later turn. etch_memory stages; confirm_memory writes after the
-    # holder agrees.
+    # later turn. etch_memory stages and speaks the sentence. The SDK
+    # saves on the holder's next final yes.
     agent = Agent(
         instructions=(
             f"{faf.system_prompt()}\n\n"

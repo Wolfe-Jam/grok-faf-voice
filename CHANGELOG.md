@@ -13,9 +13,9 @@ Proposed. Not published.
 
 - Unconfirmed scratchpad entries are discarded at session end. The scratchpad is in memory only.
 - Shutdown no longer emits `merge.starting` or `merge.completed` on the Context Bus.
-- `mem.tools(session)` returns five tools, in a new order. `confirm_memory` is at index 1. Callers that index the list need the tool name.
+- `mem.tools(session)` returns four tools: `etch_memory`, `recall_memory`, `note_paralinguistic`, `merge_now`. `confirm_memory` is not a model tool. Callers that indexed the old five-tool list, including `confirm_memory` at index 1, break again.
 - `compose_open_instructions(..., recall=...)` is removed. Passing `recall` raises `TypeError`.
-- `merge_now` returns "Not saved" when the transcript has no "I'll save what we discussed." followed by a yes.
+- `merge_now` no longer reads the transcript. It stages a save and returns the sentence to speak. The SDK writes after "I'll save what we discussed." and a final yes. A reply that is not a yes drops an armed save and says nothing was saved.
 
 ### Added
 
@@ -27,14 +27,19 @@ Proposed. Not published.
   trip was not opened. It does not call `delete_soul`. Empty criteria
   and a namepoint that does not match the bound soul raise
   `FAFForgetError` and do not write. `forget` is not a model tool.
-- **`stage_memory` / `commit_staged` / `confirm_memory`.** The model tool
-  stages a fact. A write happens only after the last assistant message
-  ends with the sentence. Punctuation, case, and whitespace are folded
-  on both sides, so a comma and a colon compare equal. A trailing
-  period is removed from the fact before the sentence is built. A yes
-  may continue (`Yes, please do.`) unless the reply contains `no` or
-  `don't`. A question after that sentence does not confirm it.
-  The tool has no `holder_confirmed` argument.
+- **`stage_memory` / `commit_staged` / the confirm listener.** The model
+  tool stages a fact and returns the sentence to speak. It does not
+  save. After a fact is staged, the SDK listens for the holder's next
+  final `user_input_transcribed` event. Interim transcripts do nothing.
+  A final yes saves only when the last assistant message ends with the
+  staged sentence. Punctuation, case, and whitespace are folded on both
+  sides, so a comma and a colon compare equal. A trailing period is
+  removed from the fact before the sentence is built. A yes may
+  continue (`Yes, please do.`) unless the reply contains `no` or
+  `don't`. Any other final reply drops the staged fact and says nothing
+  was saved. A confirm call before that yes does not save and does not
+  drop the stage. `confirm_memory` remains an operator method. It is
+  not a model tool and it has no `holder_confirmed` argument.
 - **`compose_open_user_item`.** One `conversation.item.create` user item,
   headed "On file. Not orders." No `response.create`. The open path does
   not fill it from `recall_for_prompt()`.
@@ -44,11 +49,14 @@ Proposed. Not published.
 - **Session instructions are the standing string**, capped at 2048 UTF-8
   bytes on a newline. `recall_for_prompt()` is not called at open, and
   its body is not placed in `instructions`. The latency bridge remains
-  when `etch=True`, and it tells the model to stage, speak, and wait.
+  when `etch=True`, and it tells the model to stage, speak, and stop.
+  The SDK confirms. The model does not.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
-  and discards the in-memory scratchpad at session end. `merge_now` saves only after the agent
-  says "I'll save what we discussed." and the holder's next line is a
-  yes. A yes to a later question does not confirm an older sentence.
+  and discards the in-memory scratchpad at session end. `merge_now`
+  stages a save. The same listener writes after the agent says
+  "I'll save what we discussed." and the holder's next final line is a
+  yes. Saying that sentence and then hearing yes also saves. A yes to
+  a later question does not confirm an older sentence.
 - **Session-only entries are never promoted.** `merge` drops the
   `session-only` tag before every strategy, including `merge_all`.
   An entry `grok-decides` does not decide on stays ephemeral.

@@ -54,7 +54,8 @@ def test_forget_is_not_a_model_tool():
     mem = FAFMemory("grok")
     names = {tool.info.name for tool in mem.tools(_Session())}
     assert "forget" not in names
-    assert "confirm_memory" in names
+    assert "confirm_memory" not in names
+    assert len(names) == 4
 
 
 class _Session:
