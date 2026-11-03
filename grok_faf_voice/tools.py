@@ -86,7 +86,7 @@ def make_etch_tool(mem: FAFMemory, bus: ContextBus | None = None):
         EXAMPLES (correct):
           User: "Remember my favorite color is cyan."
           → etch_memory(content="favorite color is cyan")
-          → say exactly: "I'll remember this: favorite color is cyan."
+          → say only the sentence this tool returns
           → stop. The holder confirms by speaking.
 
         EXAMPLES (DO NOT do this):
@@ -213,16 +213,16 @@ def make_merge_tool(
     async def merge_now(context: RunContext) -> str:
         """Stage a save of what we discussed. This does not write.
 
-        Say exactly "I'll save what we discussed." and then stop.
-        The SDK saves when the namepoint holder's next final reply is
-        a yes. A yes to a later question does not count. Session-only
-        facts are not saved.
+        Call this tool, then say only the sentence it returns, and stop.
+        Do not invent the sentence. The SDK saves when the namepoint
+        holder's next final reply is a yes. A yes to a later question
+        does not count. Session-only facts are not saved.
 
         CRITICAL LATENCY RULE (multi-second work):
-        - Speak the sentence, then stop. After the holder agrees, the
-          SDK says "Give me just a moment while I consolidate
-          everything..." before the merge runs, and a short
-          confirmation after.
+        - Speak only the returned sentence, then stop. After the holder
+          agrees, the SDK says "Give me just a moment while I consolidate
+          everything..." before the merge runs, and a short confirmation
+          after.
         """
         _ = context
         already = mem.saved_merge_result()
@@ -410,6 +410,38 @@ def _last_assistant_text(messages: list[Any]) -> str:
     return ""
 
 
+def _user_after_last_assistant(messages: list[Any]) -> str:
+    """The user line after the latest assistant line, or an empty string.
+
+    A user line that is already behind an assistant reply is an older
+    turn. The listener must not treat that older line as this stage.
+    """
+    last_assistant = -1
+    last_user = -1
+    last_user_text = ""
+    for index, message in enumerate(messages):
+        role = _role_of(message)
+        text = _text_of(message).strip()
+        if not text:
+            continue
+        if role in {"assistant", "agent"}:
+            last_assistant = index
+        elif role == "user":
+            last_user = index
+            last_user_text = text
+    if last_user > last_assistant:
+        return last_user_text
+    return ""
+
+
+def _is_bare_yes(text: str) -> bool:
+    """True when the whole reply is one yes token, such as ``Yes.``"""
+    folded = _norm_match(text)
+    if not folded or not _is_yes(text):
+        return False
+    return folded in {_norm_match(token) for token in _YES}
+
+
 def _subscribe(session: Any, event: str, callback: Any) -> None:
     """Register ``callback`` on a LiveKit session, or a decorator stand-in."""
     on = getattr(session, "on", None)
@@ -427,7 +459,10 @@ class HolderConfirm:
     The model only stages. This listener is the confirm. Attach it with
     :meth:`FAFMemory.attach_confirm`. Interim transcripts do nothing.
     A final yes saves only when the last assistant message ends with
-    the staged sentence. Any other final reply drops the stage.
+    the staged sentence. The transcript that asked for the save, and
+    any final that arrives before that sentence is spoken, do not save
+    and do not drop the stage. Any other reply after the sentence drops
+    it. One reply writes once.
     """
 
     def __init__(self, mem: FAFMemory, session: Any | None = None) -> None:
@@ -435,6 +470,14 @@ class HolderConfirm:
         self._session = session
         self._attached = False
         self._heard_assistant = ""
+        self._open_text = ""
+        self._open_item: str | None = None
+        self._request_text = ""
+        self._request_item: str | None = None
+        self._has_snapshot = False
+        self._assistant_at_stage = ""
+        self._claimed = False
+        self._finished = False
 
     @property
     def session(self) -> Any | None:
@@ -448,6 +491,25 @@ class HolderConfirm:
         _subscribe(self._session, "conversation_item_added", self._on_item)
         self._attached = True
 
+    def note_stage(self) -> None:
+        """Snapshot the turn that caused this stage.
+
+        The realtime model can speak, and the socket can deliver the
+        request's final transcript, before that request is the latest
+        user line. That transcript is not the holder's answer.
+        """
+        self._finished = False
+        self._claimed = False
+        self._has_snapshot = True
+        self._assistant_at_stage = self._assistant_text(None)
+        if not self._request_text and self._open_text:
+            self._request_text = self._open_text
+            self._request_item = self._open_item
+        user = _user_after_last_assistant(_messages_from(self._session))
+        if user and not _is_bare_yes(user):
+            if len(_norm_match(user)) >= len(_norm_match(self._request_text)):
+                self._request_text = user
+
     def _on_item(self, ev: Any) -> None:
         item = getattr(ev, "item", None)
         if item is None:
@@ -460,14 +522,23 @@ class HolderConfirm:
 
     def _on_user_input(self, ev: Any) -> None:
         """Final transcripts only. Interim replies do not save or drop."""
-        if not getattr(ev, "is_final", False):
-            return
         transcript = str(getattr(ev, "transcript", "") or "")
+        item_id = getattr(ev, "item_id", None)
+        if not getattr(ev, "is_final", False):
+            if transcript.strip():
+                self._open_text = transcript
+                self._open_item = item_id
+                if not self._sentence_out(None):
+                    self._request_text = transcript
+                    self._request_item = item_id
+            return
+        if self._finished or self._claimed:
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        task = loop.create_task(self.apply_final(transcript))
+        task = loop.create_task(self.apply_final(transcript, item_id=item_id))
         task.add_done_callback(self._log_task)
 
     def _log_task(self, task: asyncio.Task) -> None:
@@ -490,20 +561,81 @@ class HolderConfirm:
             return
         await say(text)
 
+    def _sentence_out(self, messages: list[Any] | None) -> bool:
+        """True once the confirmation sentence ends the last assistant line."""
+        assistant = self._assistant_text(messages)
+        pending = self._mem.pending
+        if pending is not None and _ends_with_spoken(assistant, str(pending["spoken"])):
+            return True
+        return _ends_with_spoken(assistant, SAVE_SPOKEN)
+
+    def _is_request_echo(self, transcript: str, item_id: str | None) -> bool:
+        """True when this final is the request, delivered after the stage.
+
+        xAI flushes that utterance as ``is_final`` when the model starts
+        speaking. A bare ``Yes.`` is not an echo of an older yes: the
+        holder's answer often uses the same word, on a new item.
+        """
+        if item_id and self._request_item and item_id == self._request_item:
+            return True
+        req = _norm_match(self._request_text)
+        norm = _norm_match(transcript)
+        if not req or not norm or _is_bare_yes(transcript):
+            return False
+        same = norm == req or req.startswith(norm + " ")
+        if not same:
+            return False
+        if item_id and self._request_item and item_id != self._request_item:
+            return False
+        return True
+
+    def _ignore_final(
+        self,
+        transcript: str,
+        item_id: str | None,
+        messages: list[Any] | None,
+    ) -> bool:
+        """The request, or a final that arrives before the sentence."""
+        if self._is_request_echo(transcript, item_id):
+            log.info("holder confirm: ignored request transcript")
+            return True
+        if not self._has_snapshot:
+            return False
+        assistant = self._assistant_text(messages)
+        if _norm_match(assistant) != _norm_match(self._assistant_at_stage):
+            return False
+        # Same assistant line as at stage time. If that line already ends
+        # with the confirmation sentence, this final is the answer.
+        if self._sentence_out(messages):
+            return False
+        log.info("holder confirm: ignored transcript before the sentence")
+        return True
+
     async def apply_final(
         self,
         transcript: str,
         *,
         messages: list[Any] | None = None,
+        item_id: str | None = None,
     ) -> str:
         """Decide the staged fact, or a scratchpad save, from one final line.
 
         ``transcript`` is the final user-input-transcribed text. It is
         not read from session history. The last assistant message is.
+        A duplicate final of the same reply does not write again.
         """
-        if self._mem.pending is not None:
-            return await self._resolve_fact(transcript, messages)
-        return await self._resolve_merge(transcript, messages)
+        if self._finished or self._claimed:
+            return ""
+        if self._ignore_final(transcript, item_id, messages):
+            return ""
+        self._claimed = True
+        try:
+            if self._mem.pending is not None:
+                return await self._resolve_fact(transcript, messages)
+            return await self._resolve_merge(transcript, messages)
+        finally:
+            if not self._finished:
+                self._claimed = False
 
     async def _resolve_fact(
         self,
@@ -515,7 +647,9 @@ class HolderConfirm:
             return ""
         assistant = self._assistant_text(messages)
         if _is_yes(transcript) and _ends_with_spoken(assistant, pending["spoken"]):
+            self._finished = True
             return await self._commit(pending)
+        self._finished = True
         self._mem.drop_pending()
         log.info("holder confirm: dropped")
         await self._say("Nothing was saved.")
@@ -546,13 +680,18 @@ class HolderConfirm:
         transcript: str,
         messages: list[Any] | None,
     ) -> str:
+        if self._mem.saved_merge_result():
+            self._finished = True
+            return ""
         assistant = self._assistant_text(messages)
         armed = self._mem.merge_armed
         matches = _is_yes(transcript) and _ends_with_spoken(assistant, SAVE_SPOKEN)
         if matches:
+            self._finished = True
             self._mem.clear_merge_arm()
             return await self._run_merge()
         if armed:
+            self._finished = True
             self._mem.clear_merge_arm()
             log.info("holder confirm: dropped")
             await self._say("Nothing was saved.")

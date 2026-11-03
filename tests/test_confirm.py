@@ -115,9 +115,16 @@ async def test_final_yes_saves():
     with patch.object(mem, "etch", new_callable=AsyncMock, return_value="saved") as etch:
         seen: list[str] = []
 
-        async def _spy(transcript: str, *, messages: list | None = None) -> str:
+        async def _spy(
+            transcript: str,
+            *,
+            messages: list | None = None,
+            item_id: str | None = None,
+        ) -> str:
             seen.append(transcript)
-            return await HolderConfirm.apply_final(listener, transcript, messages=messages)
+            return await HolderConfirm.apply_final(
+                listener, transcript, messages=messages, item_id=item_id
+            )
 
         listener.apply_final = _spy  # type: ignore[method-assign]
         listener._on_user_input(SimpleNamespace(transcript="Yes.", is_final=True))
@@ -243,6 +250,127 @@ async def test_merge_tool_before_the_yes_does_not_block_it():
         )
     merge.assert_awaited_once()
     assert result.startswith("Saved 1")
+
+
+async def test_request_final_does_not_drop_or_block_the_later_yes():
+    """Live 2026-11-03: the request's final arrived after the tool.
+
+    The tool ran before that transcript was the latest user line, and
+    the socket then delivered it as a final, including after the
+    confirmation sentence. That final must not save and must not drop
+    the stage. The holder's later ``Yes.`` still saves. A second final
+    of that yes does not write again.
+    """
+    mem = FAFMemory("grok", api_key="k")
+    session = _Session([_Msg("assistant", "Perfect, it's saved.")])
+    listener = HolderConfirm(mem, session)
+    mem._confirm = listener
+    request = "Please remember that my favorite color is cyan."
+    listener._on_user_input(
+        SimpleNamespace(transcript=request, is_final=False, item_id="req-1")
+    )
+    spoken = mem.stage_memory("favorite color is cyan")
+
+    before = await listener.apply_final(
+        request,
+        item_id="req-1",
+        messages=list(session.history.messages()),
+    )
+    after = await listener.apply_final(
+        request,
+        item_id="req-1",
+        messages=[_Msg("assistant", "Got it. " + spoken)],
+    )
+    assert before == ""
+    assert after == ""
+    assert mem.pending is not None
+
+    with patch.object(mem, "etch", new_callable=AsyncMock, return_value="saved") as etch:
+        saved = await listener.apply_final(
+            "Yes.",
+            item_id="yes-1",
+            messages=[_Msg("assistant", "Got it. " + spoken)],
+        )
+        interim = listener._on_user_input(
+            SimpleNamespace(transcript="Yes.", is_final=False, item_id="yes-2")
+        )
+        again = await listener.apply_final(
+            "Yes",
+            item_id="yes-1",
+            messages=[_Msg("assistant", "Got it. " + spoken)],
+        )
+    assert interim is None
+    etch.assert_awaited_once()
+    assert saved == "saved"
+    assert again == ""
+    assert mem.pending is None
+
+
+async def test_merge_request_final_does_not_drop_or_block_the_later_yes():
+    """The save request flushed after merge_now must not disarm the save."""
+    mem = FAFMemory("grok", api_key="k")
+    session = _Session([_Msg("assistant", "Perfect, it's saved.")])
+    listener = HolderConfirm(mem, session)
+    mem._confirm = listener
+    request = "Please save what we discussed."
+    listener._on_user_input(
+        SimpleNamespace(transcript=request, is_final=False, item_id="req-1")
+    )
+    mem.arm_merge()
+
+    before = await listener.apply_final(
+        request,
+        item_id="req-1",
+        messages=list(session.history.messages()),
+    )
+    after = await listener.apply_final(
+        request,
+        item_id="req-1",
+        messages=[_Msg("assistant", SAVE_SPOKEN)],
+    )
+    assert before == ""
+    assert after == ""
+    assert mem.merge_armed is True
+
+    async def _merge(*, strategy: str = "heuristic", **_):
+        return {
+            "promoted": 1,
+            "discarded": 0,
+            "strategy": strategy,
+            "merged": 0,
+            "kept_ephemeral": 0,
+            "overall_notes": None,
+        }
+
+    with patch.object(mem, "merge", side_effect=_merge) as merge:
+        saved = await listener.apply_final(
+            "Yes.",
+            item_id="yes-1",
+            messages=[_Msg("assistant", SAVE_SPOKEN)],
+        )
+        again = await listener.apply_final(
+            "Yes",
+            item_id="yes-2",
+            messages=[_Msg("assistant", SAVE_SPOKEN)],
+        )
+    merge.assert_awaited_once()
+    assert saved.startswith("Saved 1")
+    assert again == ""
+    assert mem.merge_armed is False
+
+
+def test_instructions_do_not_quote_the_confirmation_sentence():
+    """The model learns the sentence from the tool result, not the prompt."""
+    from grok_faf_voice.memory import LATENCY_BRIDGE_INSTRUCTIONS
+
+    assert "I'll remember this:" not in LATENCY_BRIDGE_INSTRUCTIONS
+    assert "I'll save what we discussed." not in LATENCY_BRIDGE_INSTRUCTIONS
+    assert "Do not invent a sentence." in LATENCY_BRIDGE_INSTRUCTIONS
+    mem = FAFMemory("grok", api_key="k")
+    for tool in mem.tools(_Session()):
+        description = str(getattr(tool.info, "description", "") or "")
+        assert "I'll remember this:" not in description
+        assert "I'll save what we discussed." not in description
 
 
 async def test_yes_before_the_sentence_is_not_confirmation():

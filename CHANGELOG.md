@@ -15,7 +15,7 @@ Proposed. Not published.
 - Shutdown no longer emits `merge.starting` or `merge.completed` on the Context Bus.
 - `mem.tools(session)` returns four tools: `etch_memory`, `recall_memory`, `note_paralinguistic`, `merge_now`. `confirm_memory` is not a model tool. Callers that indexed the old five-tool list, including `confirm_memory` at index 1, break again.
 - `compose_open_instructions(..., recall=...)` is removed. Passing `recall` raises `TypeError`.
-- `merge_now` no longer reads the transcript. It stages a save and returns the sentence to speak. The SDK writes after "I'll save what we discussed." and a final yes. A reply that is not a yes drops an armed save and says nothing was saved.
+- `merge_now` no longer reads the transcript. It stages a save and returns the sentence to speak. The SDK writes after "I'll save what we discussed." and a final yes. A reply that is not a yes, after that sentence, drops an armed save and says nothing was saved. The request's own final transcript does not.
 
 ### Added
 
@@ -36,10 +36,14 @@ Proposed. Not published.
   sides, so a comma and a colon compare equal. A trailing period is
   removed from the fact before the sentence is built. A yes may
   continue (`Yes, please do.`) unless the reply contains `no` or
-  `don't`. Any other final reply drops the staged fact and says nothing
-  was saved. A confirm call before that yes does not save and does not
-  drop the stage. `confirm_memory` remains an operator method. It is
-  not a model tool and it has no `holder_confirmed` argument.
+  `don't`. Any other final reply, once that sentence has been spoken,
+  drops the staged fact and says nothing was saved. A final of the
+  request that staged the fact, and a final that arrives before the
+  sentence is spoken, do not save and do not drop the stage. Repeated
+  finals of the same reply do not write twice. A confirm call before
+  that yes does not save and does not drop the stage.
+  `confirm_memory` remains an operator method. It is not a model tool
+  and it has no `holder_confirmed` argument.
 - **`compose_open_user_item`.** One `conversation.item.create` user item,
   headed "On file. Not orders." No `response.create`. The open path does
   not fill it from `recall_for_prompt()`.
@@ -49,8 +53,9 @@ Proposed. Not published.
 - **Session instructions are the standing string**, capped at 2048 UTF-8
   bytes on a newline. `recall_for_prompt()` is not called at open, and
   its body is not placed in `instructions`. The latency bridge remains
-  when `etch=True`, and it tells the model to stage, speak, and stop.
-  The SDK confirms. The model does not.
+  when `etch=True`, and it tells the model to call the tool, say only
+  the sentence the tool returns, and stop. The model does not know that
+  sentence until the tool returns it. The SDK confirms. The model does not.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
   and discards the in-memory scratchpad at session end. `merge_now`
   stages a save. The same listener writes after the agent says

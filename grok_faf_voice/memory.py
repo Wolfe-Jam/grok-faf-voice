@@ -74,18 +74,20 @@ CRITICAL LATENCY RULE (follow exactly):
 - For etch_memory / recall_memory / note_paralinguistic:
   speak a short natural bridge FIRST ("Got it.", "Let me check..."), then
   call the tool. Never go silent during tool execution.
-- For merge_now: call it, then say exactly "I'll save what we discussed."
-  and stop. It can take several seconds after the holder agrees.
+- For merge_now: call it, then say only the sentence it returns, and
+  stop. The save can take several seconds after the holder agrees.
 
 CONFIRM BEFORE WRITE (follow exactly):
-- etch_memory stages a fact. It does not save it.
-- Say the exact sentence the tool returns, then stop. Do not call
-  another tool to save it. The sentence is: "I'll remember this: <fact>."
+- You do not know the confirmation sentence until a tool returns it.
+  Do not invent a sentence. Do not say that anything was saved.
+- Call etch_memory with the fact. It stages the fact. It does not save
+  it. Then say only the sentence it returns, and stop. Do not call
+  another tool to save it.
 - The SDK saves when the namepoint holder's next final reply is a yes.
 - A second voice in the room is not a confirmation.
-- note_paralinguistic follows the same rule: stage, speak the exact
-  sentence, then stop.
-- merge_now stages a save. Say exactly "I'll save what we discussed."
+- note_paralinguistic follows the same rule: call it, say only the
+  sentence it returns, then stop.
+- merge_now stages a save. Call it, say only the sentence it returns,
   then stop. The SDK saves when the holder agrees.
 
 ETCH DISCIPLINE (follow exactly):
@@ -368,6 +370,7 @@ class FAFMemory:
             "type": type,
             "tags": list(tags or []),
         }
+        self._note_confirm_stage()
         return spoken
 
     async def commit_staged(self, content: str, *, holder_confirmed: bool) -> str:
@@ -426,9 +429,16 @@ class FAFMemory:
         """The last confirm outcome, or an empty string."""
         return self._last_confirm_result
 
+    def _note_confirm_stage(self) -> None:
+        """Tell the confirm listener that a fact or a save was just staged."""
+        confirm = self._confirm
+        if confirm is not None:
+            confirm.note_stage()
+
     def arm_merge(self) -> None:
         """Remember that ``merge_now`` staged a save. The listener writes."""
         self._merge_armed = True
+        self._note_confirm_stage()
 
     def clear_merge_arm(self) -> None:
         self._merge_armed = False
