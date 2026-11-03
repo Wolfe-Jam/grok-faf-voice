@@ -6,7 +6,9 @@ import inspect
 from unittest.mock import AsyncMock, patch
 
 from grok_faf_voice import FAFEtchError, FAFMemory, VoiceAgent
+from grok_faf_voice.memory import SPOKEN_FACT
 from grok_faf_voice.tools import (
+    SAVE_SPOKEN,
     holder_confirmed,
     make_confirm_tool,
     make_etch_tool,
@@ -98,6 +100,47 @@ async def test_yes_before_the_sentence_is_not_confirmation():
     spoken = "I'll remember this: favorite color is cyan."
     messages = [_Msg("user", "yes"), _Msg("assistant", spoken)]
     assert holder_confirmed(messages, spoken) is False
+
+
+def test_a_question_after_the_sentence_is_not_confirmation():
+    """The yes answers the question that follows the fact sentence."""
+    spoken = SPOKEN_FACT.format(content="favorite color is cyan")
+    messages = [
+        _Msg("assistant", spoken + " Also, want me to save everything we discussed?"),
+        _Msg("user", "yes"),
+    ]
+    assert holder_confirmed(messages, spoken) is False
+
+
+def test_live_bridge_and_yes_period_confirm():
+    """Live 2026-11-03: bridge prefix, sentence at the end, user 'Yes.'"""
+    spoken = SPOKEN_FACT.format(content="favorite color is cyan")
+    messages = [
+        _Msg("assistant", "Got it. " + spoken),
+        _Msg("user", "Yes."),
+    ]
+    assert holder_confirmed(messages, spoken) is True
+    assert holder_confirmed(messages[:1], spoken) is False
+
+
+def test_live_yes_with_extra_words_does_not_confirm():
+    """The spoken yes was 'Yes.' A longer yes was not in that transcript."""
+    spoken = SPOKEN_FACT.format(content="favorite color is cyan")
+    messages = [
+        _Msg("assistant", spoken),
+        _Msg("user", "Yes, please do."),
+    ]
+    assert holder_confirmed(messages, spoken) is False
+
+
+def test_save_sentence_must_end_the_assistant_message():
+    messages = [
+        _Msg("assistant", SAVE_SPOKEN + " Also, want me to book the table?"),
+        _Msg("user", "Yes."),
+    ]
+    assert holder_confirmed(messages, SAVE_SPOKEN) is False
+    exact = [_Msg("assistant", SAVE_SPOKEN), _Msg("user", "Yes.")]
+    assert holder_confirmed(exact, SAVE_SPOKEN) is True
 
 
 def test_a_later_yes_does_not_confirm_an_older_fact():

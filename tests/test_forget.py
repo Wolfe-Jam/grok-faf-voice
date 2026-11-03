@@ -90,12 +90,12 @@ async def test_forget_by_entry_id(tmp_path: Path):
         "claude-code:wolfejam",
         ForgetCriteria(entry_id="precision-is-power"),
     )
-    assert result["removed"] == 1
+    assert result["removed"] == 2
     facts = _facts(path)
     assert len(facts) == 1
     assert facts[0] == "undated string fact"
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert doc["index"]
+    assert doc["index"] == []
 
 
 async def test_forget_by_tag_keeps_string_facts(tmp_path: Path):
@@ -115,8 +115,9 @@ async def test_forget_by_time_range_is_inclusive_and_skips_undated(tmp_path: Pat
     start = datetime(2026, 5, 20, tzinfo=timezone.utc)
     end = datetime(2026, 5, 20, tzinfo=timezone.utc)
     result = await mem.forget("@claude-code:wolfejam", ForgetCriteria(start=start, end=end))
-    assert result["removed"] == 1
+    assert result["removed"] == 2
     assert _facts(path) == ["undated string fact"]
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["index"] == []
 
 
 async def test_time_range_outside_keeps_the_dated_fact(tmp_path: Path):
@@ -182,6 +183,70 @@ async def test_line_soul_forgets_by_id_tag_and_time():
     assert "# Fact:" not in wiped
 
 
+DATED = """\
+version: "1.1"
+profile: "knowledge"
+namepoint: "@demo-user"
+memory:
+  facts:
+    - id: f1
+      text: keep
+      timestamp: "2026-11-01T10:00:00Z"
+    - id: f2
+      text: drop
+      timestamp: "2026-11-01T11:00:00Z"
+"""
+
+
+def test_kept_timestamp_stays_rfc3339():
+    from grok_faf_voice.forget import apply_forget
+
+    new_text, removed = apply_forget(DATED, ForgetCriteria(entry_id="f2"))
+    assert removed == 1
+    assert "2026-11-01T10:00:00Z" in new_text
+    assert "2026-11-01 10:00:00" not in new_text
+    assert "drop" not in new_text
+    doc = yaml.safe_load(new_text)
+    kept = doc["memory"]["facts"]
+    assert len(kept) == 1
+    assert kept[0]["id"] == "f1"
+    assert kept[0]["text"] == "keep"
+
+
+def test_partial_forget_prunes_only_the_removed_id():
+    from grok_faf_voice.forget import apply_forget
+
+    text = """\
+index:
+  - "f1 — keep pointer"
+  - "f2 — drop pointer"
+memory:
+  facts:
+    - id: f1
+      text: keep
+    - id: f2
+      text: drop
+"""
+    new_text, removed = apply_forget(text, ForgetCriteria(entry_id="f2"))
+    assert removed == 2
+    doc = yaml.safe_load(new_text)
+    assert doc["index"] == ["f1 — keep pointer"]
+    assert [fact["id"] for fact in doc["memory"]["facts"]] == ["f1"]
+
+
+async def test_local_forget_replaces_the_file_as_owner_only(tmp_path: Path):
+    path = tmp_path / "knowledge.fafm"
+    path.write_text(KNOWLEDGE, encoding="utf-8")
+    mem = FAFMemory.from_file(path)
+    await mem.forget(
+        "@claude-code:wolfejam",
+        ForgetCriteria(entry_id="precision-is-power"),
+    )
+    mode = path.stat().st_mode & 0o777
+    assert mode == 0o600
+    assert not list(tmp_path.glob(".knowledge.fafm.*"))
+
+
 class _Result:
     def __init__(self, text: str) -> None:
         self.content = [type("T", (), {"text": text})()]
@@ -189,6 +254,7 @@ class _Result:
 
 class _Client:
     calls: list[tuple[str, dict]] = []
+    soul = "server preamble\n---\n" + KNOWLEDGE
 
     def __init__(self, transport) -> None:
         self.transport = transport
@@ -202,22 +268,52 @@ class _Client:
     async def call_tool(self, name, args):
         _Client.calls.append((name, dict(args)))
         if name == "get_soul":
-            body = "server preamble\n---\n" + KNOWLEDGE
-            return _Result(body)
+            return _Result(_Client.soul)
         if name == "delete_soul":
             raise AssertionError("delete_soul is not forget")
         return _Result("replaced")
 
 
+RULED = """\
+version: "1.1"
+profile: "voice"
+namepoint: "@demo-user"
+memory:
+  facts:
+    - id: f1
+      text: |-
+        keep
+        ---
+        this half
+    - id: f2
+      text: drop me
+"""
+
+
+async def test_hosted_forget_keeps_a_body_that_contains_a_rule(monkeypatch):
+    _Client.calls = []
+    _Client.soul = RULED
+    monkeypatch.setattr("grok_faf_voice.memory.Client", _Client)
+    mem = FAFMemory("@demo-user", api_key="k")
+    result = await mem.forget("@demo-user", ForgetCriteria(entry_id="f2"))
+    assert result["removed"] == 1
+    write = _Client.calls[1][1]
+    assert "keep" in write["content"]
+    assert "this half" in write["content"]
+    assert "drop me" not in write["content"]
+    _Client.soul = "server preamble\n---\n" + KNOWLEDGE
+
+
 async def test_hosted_forget_replaces_and_strips_the_preamble(monkeypatch):
     _Client.calls = []
+    _Client.soul = "server preamble\n---\n" + KNOWLEDGE
     monkeypatch.setattr("grok_faf_voice.memory.Client", _Client)
     mem = FAFMemory("@claude-code:wolfejam", api_key="k")
     result = await mem.forget(
         "@claude-code:wolfejam",
         ForgetCriteria(entry_id="precision-is-power"),
     )
-    assert result["removed"] == 1
+    assert result["removed"] == 2
     names = [name for name, _args in _Client.calls]
     assert names == ["get_soul", "write_soul"]
     assert "delete_soul" not in names

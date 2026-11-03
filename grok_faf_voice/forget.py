@@ -3,10 +3,11 @@
 ``forget`` is an SDK method. It is not a tool the model can call.
 Criteria combine with AND. A bare string fact has no id, tags, or
 timestamp, so id, tag, and time filters leave it in place. ``wipe``
-removes every fact. On a YAML soul it also clears ``index``, so a
-knowledge index cannot put a wiped fact back. Rewriting that YAML
-drops comments. Unknown keys and their order are kept. The file is
-not deleted, and this module never calls ``delete_soul``.
+removes every fact and clears ``index``. A narrower forget drops index
+entries that name a removed id, and leaves the other index lines.
+Rewriting YAML drops comments and writes date-times back as RFC 3339.
+Unknown keys and their order are kept. The file is not deleted, and
+this module never calls ``delete_soul``.
 """
 
 from __future__ import annotations
@@ -78,14 +79,70 @@ def apply_forget(text: str, criteria: ForgetCriteria) -> tuple[str, int]:
     return _forget_lines(text, criteria)
 
 
+class _SoulLoader(yaml.SafeLoader):
+    """SafeLoader that leaves timestamps as strings.
+
+    PyYAML's default resolver turns ``2026-11-01T10:00:00Z`` into a
+    datetime, and ``safe_dump`` then writes ``2026-11-01 10:00:00+00:00``.
+    A kept fact must stay RFC 3339.
+    """
+
+
+_SoulLoader.yaml_implicit_resolvers = {
+    key: [
+        (tag, regexp)
+        for tag, regexp in resolvers
+        if tag != "tag:yaml.org,2002:timestamp"
+    ]
+    for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
+class _SoulDumper(yaml.SafeDumper):
+    """Dump datetimes as RFC 3339 if one is still in the document."""
+
+
+def _rfc3339(when: datetime) -> str:
+    utc = _as_utc(when)
+    if utc.microsecond:
+        fraction = f"{utc.microsecond:06d}".rstrip("0")
+        return utc.strftime("%Y-%m-%dT%H:%M:%S") + f".{fraction}Z"
+    return utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _represent_datetime(dumper: yaml.SafeDumper, data: datetime):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", _rfc3339(data))
+
+
+_SoulDumper.add_representer(datetime, _represent_datetime)
+
+
 def _load_yaml_soul(text: str) -> dict[str, Any] | None:
     try:
-        doc = yaml.safe_load(text)
+        doc = yaml.load(text, Loader=_SoulLoader)  # noqa: S506 — SafeLoader subclass
     except yaml.YAMLError:
         return None
     if isinstance(doc, dict) and "memory" in doc:
         return doc
     return None
+
+
+def split_hosted_banner(raw: str) -> str:
+    """Drop an old get_soul banner, and leave a real soul intact.
+
+    Current MCPaaS ``get_soul`` returns the stored soul text. It does
+    not add a banner (``handler.ts``). Some captured reads still have
+    a banner before the first ``\\n---\\n``. That banner is removed
+    only when the remainder is a soul document and the banner is not.
+    A soul that itself contains that separator is returned whole.
+    """
+    sep = "\n---\n"
+    if sep not in raw:
+        return raw
+    head, tail = raw.split(sep, 1)
+    if _load_yaml_soul(tail) is not None and _load_yaml_soul(head) is None:
+        return tail
+    return raw
 
 
 def _as_utc(value: datetime | str) -> datetime:
@@ -153,9 +210,14 @@ def _fact_matches(fact: Any, criteria: ForgetCriteria) -> bool:
 
 
 def _dump(doc: dict[str, Any]) -> str:
-    """Serialize a soul. Comments in the original YAML are not kept."""
-    return yaml.safe_dump(
+    """Serialize a soul. Comments in the original YAML are not kept.
+
+    Date-times are written as RFC 3339. The loader keeps them as
+    strings so a kept fact is not rewritten into a space-separated time.
+    """
+    return yaml.dump(
         doc,
+        Dumper=_SoulDumper,
         sort_keys=False,
         allow_unicode=True,
         default_flow_style=False,
@@ -170,9 +232,13 @@ def _forget_yaml(doc: dict[str, Any], criteria: ForgetCriteria) -> tuple[str, in
     facts = list(memory.get("facts") or [])
     kept: list[Any] = []
     removed = 0
+    removed_ids: set[str] = set()
     for fact in facts:
         if _fact_matches(fact, criteria):
             removed += 1
+            fact_id = _removed_id(fact)
+            if fact_id is not None:
+                removed_ids.add(fact_id)
         else:
             kept.append(fact)
     memory["facts"] = kept
@@ -181,7 +247,34 @@ def _forget_yaml(doc: dict[str, Any], criteria: ForgetCriteria) -> tuple[str, in
         if isinstance(index, list) and index:
             removed += len(index)
         doc["index"] = []
+    elif removed_ids and isinstance(doc.get("index"), list):
+        kept_index: list[Any] = []
+        for item in doc["index"]:
+            if _index_mentions(item, removed_ids):
+                removed += 1
+            else:
+                kept_index.append(item)
+        doc["index"] = kept_index
     return _dump(doc), removed
+
+
+def _removed_id(fact: Any) -> str | None:
+    if isinstance(fact, dict) and fact.get("id"):
+        return str(fact["id"])
+    return None
+
+
+def _index_mentions(item: Any, removed_ids: set[str]) -> bool:
+    """True when an index line names a fact id this forget removed."""
+    if isinstance(item, str):
+        head = re.split(r"\s+[—–-]\s+", item, maxsplit=1)[0].strip()
+        return head in removed_ids
+    if isinstance(item, dict):
+        for key in ("id", "entry_id"):
+            value = item.get(key)
+            if value is not None and str(value) in removed_ids:
+                return True
+    return False
 
 
 def _is_entry_line(line: str) -> bool:

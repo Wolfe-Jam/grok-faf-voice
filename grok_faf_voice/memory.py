@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,7 +36,12 @@ from grok_faf_voice._merge_models import (
     MergeResult,
 )
 from grok_faf_voice.context_bus import BusEvent, ContextBus
-from grok_faf_voice.forget import FAFForgetError, ForgetCriteria, apply_forget
+from grok_faf_voice.forget import (
+    FAFForgetError,
+    ForgetCriteria,
+    apply_forget,
+    split_hosted_banner,
+)
 from grok_faf_voice.ledger import NullVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
@@ -315,7 +321,8 @@ class FAFMemory:
 
         Session-only when the device is shared, the speaker is not the
         namepoint holder, or a child may be talking. No voice print is
-        consulted. The default is durable: the holder, on their device.
+        consulted. A second voice is not identified in code. The
+        default is durable: the holder, on their device.
         """
         if (
             self._shared_device
@@ -388,7 +395,10 @@ class FAFMemory:
 
         Operator and SDK only. Not a model tool. ``delete_soul`` is not
         called. A hosted soul is rewritten with ``write_soul``
-        ``replace=true``. A local ``.fafm`` is rewritten in place.
+        ``replace=true`` and ``content`` set to the new body.
+        ``get_soul`` returns the stored text (no banner). A leading
+        banner is removed only when the remainder is the soul.
+        A local ``.fafm`` is replaced atomically, mode 0600.
         ``removed == 0`` does not write.
         """
         if not isinstance(criteria, ForgetCriteria):
@@ -405,7 +415,7 @@ class FAFMemory:
             text = self._local_path.read_text(encoding="utf-8")
             new_text, removed = apply_forget(text, criteria)
             if removed:
-                self._local_path.write_text(new_text, encoding="utf-8")
+                _write_text_owner_only(self._local_path, new_text)
                 self._cache = new_text
             return {"removed": removed, "namepoint": self._soul}
 
@@ -414,8 +424,9 @@ class FAFMemory:
                 "forget on a hosted soul needs the Voice API key for that namepoint."
             )
         raw = await self.get()
-        sep = "\n---\n"
-        body = raw.split(sep, 1)[1] if sep in raw else raw
+        # get_soul returns the stored soul. Strip a leading banner only
+        # when the remainder is the soul document.
+        body = split_hosted_banner(raw)
         new_body, removed = apply_forget(body, criteria)
         if removed == 0:
             return {"removed": 0, "namepoint": self._soul}
@@ -448,10 +459,9 @@ class FAFMemory:
         ``.fafm`` document straight off disk — no MCPaaS, no API key.
         Otherwise it reads via MCPaaS ``get_soul``.
 
-        Returns the soul body as a string. The MCPaaS path includes the
-        server's preamble before the first `\\n---\\n` separator; downstream
-        consumers can split if they want only the YAML body. The local path
-        returns the file's exact contents.
+        Returns the soul body as a string. Current MCPaaS ``get_soul``
+        returns the stored text and does not add a banner. The local
+        path returns the file's exact contents.
         """
         if self._local_path is not None:
             text = self._local_path.read_text(encoding="utf-8")
@@ -485,8 +495,8 @@ class FAFMemory:
         Examples
         --------
         >>> mem = FAFMemory.from_file("claude-code-wolfejam.fafm")
-        >>> body = await mem.get()                  # the file's soul body
-        >>> recall = await mem.recall_for_prompt()  # ready for the prompt
+        >>> body = await mem.get()             # the file's soul body
+        >>> recall = await mem.recall_for_prompt()  # not for instructions
 
         Parameters
         ----------
@@ -1219,9 +1229,8 @@ class FAFMemory:
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
 
-        Suitable for injection into the next session's system prompt
-        so the agent opens with awareness of HOW the user has been
-        sounding across prior sessions.
+        For a later recall. Do not place it in ``session.instructions``.
+        The open path stays the standing string.
 
         Returns an empty string if the soul has no paralinguistic
         entries yet — caller can compose accordingly.
@@ -1270,6 +1279,29 @@ class FAFMemory:
             make_paralinguistic_tool(self),
             make_merge_tool(self, session),
         ]
+
+
+def _write_text_owner_only(path: Path, text: str) -> None:
+    """Replace ``path`` via a temp file in the same directory, mode 0600.
+
+    ``Path.write_text`` truncates in place, so an interrupted write
+    leaves a partial soul. ``os.replace`` is atomic on the same
+    filesystem. Personal memory is owner-read/write only.
+    """
+    directory = path.parent
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=directory)
+    tmp = Path(tmp_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
 
 
 def _same_namepoint(left: str, right: str) -> bool:

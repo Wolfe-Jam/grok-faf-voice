@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Proposed. Not published.
 
+### Breaking
+
+- Unconfirmed scratchpad entries are discarded at session end. The scratchpad is in memory only.
+- Shutdown no longer emits `merge.starting` or `merge.completed` on the Context Bus.
+- `mem.tools(session)` returns five tools, in a new order. `confirm_memory` is at index 1. Callers that index the list need the tool name.
+- `compose_open_instructions(..., recall=...)` is removed. Passing `recall` raises `TypeError`.
+- `merge_now` returns "Not saved" when the transcript has no "I'll save what we discussed." followed by a yes.
+
 ### Added
 
 - **`FAFMemory.forget(namepoint, criteria)`** removes entries by id, tag,
@@ -18,9 +26,10 @@ Proposed. Not published.
   and a namepoint that does not match the bound soul raise
   `FAFForgetError` and do not write. `forget` is not a model tool.
 - **`stage_memory` / `commit_staged` / `confirm_memory`.** The model tool
-  stages a fact. A write happens only after an assistant message contains
-  the exact sentence and the namepoint holder's latest line is a short
-  yes. The tool has no `holder_confirmed` argument.
+  stages a fact. A write happens only after the last assistant message
+  ends with the exact sentence and the namepoint holder's latest line
+  is a short yes. A question after that sentence does not confirm it.
+  The tool has no `holder_confirmed` argument.
 - **`compose_open_user_item`.** One `conversation.item.create` user item,
   headed "On file. Not orders." No `response.create`. The open path does
   not fill it from `recall_for_prompt()`.
@@ -32,7 +41,7 @@ Proposed. Not published.
   its body is not placed in `instructions`. The latency bridge remains
   when `etch=True`, and it tells the model to stage, speak, and wait.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
-  and leaves the scratchpad. `merge_now` saves only after the agent
+  and discards the in-memory scratchpad at session end. `merge_now` saves only after the agent
   says "I'll save what we discussed." and the holder's next line is a
   yes. A yes to a later question does not confirm an older sentence.
 - **Session-only entries are never promoted.** `merge` drops the
@@ -47,9 +56,10 @@ Proposed. Not published.
   `RealtimeReasoning.model_construct`, because the LiveKit plugin literal
   (`minimal|low|medium|high|xhigh`) rejects `"none"`. The value is stored
   on the model options and the realtime engine copies `session.reasoning`
-  onto the outbound session. A live xAI socket was not opened, so server
-  acceptance of `effort: "none"` is unchecked. Built-in voice ids are
-  sent lowercase.
+  onto the outbound session. A live session on 2026-11-03 accepted
+  `reasoning.effort` `none` (`session.updated` echoed it). The built-in
+  voice `ara` was accepted (`session.created` reported `xai_ara`).
+  Built-in voice ids are sent lowercase.
 - README "How it works" matches this open and this write rule. The
   ElevenLabs / Hume "upcoming releases" line is gone. `CONTRIBUTING.md`
   keeps those backends as backlog.

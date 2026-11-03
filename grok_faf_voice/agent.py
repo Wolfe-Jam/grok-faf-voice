@@ -148,8 +148,9 @@ def reasoning_for_session() -> object:
 
     ``RealtimeReasoning(effort="none")`` raises, because the plugin
     literal has no ``none``. ``model_construct`` stores the value the
-    realtime engine copies onto the session. A live socket was not
-    opened to confirm the server accepts it.
+    realtime engine copies onto the session. A live session on
+    2026-11-03 accepted ``effort`` ``none``. The lowercase voice
+    ``ara`` came back as ``xai_ara``.
     """
     from openai.types.realtime import RealtimeReasoning
 
