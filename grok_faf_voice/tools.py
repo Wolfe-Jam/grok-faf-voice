@@ -425,6 +425,33 @@ def _last_user_text(messages: list[Any]) -> str:
     return ""
 
 
+_SPOKEN_ETCH = re.compile(
+    r"<tool_call>\s*etch_memory\b.*?<arg_key>\s*content\s*</arg_key>\s*"
+    r"<arg_value>\s*(.*?)\s*</arg_value>",
+    re.IGNORECASE | re.DOTALL,
+)
+_SPOKEN_ETCH_CALL = re.compile(
+    r"etch_memory\s*\(\s*content\s*=\s*[\"'](.*?)[\"']\s*\)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _spoken_etch_fact(text: str) -> str:
+    """The fact inside a tool call the model spoke instead of invoking.
+
+    grok-voice-3.0 sometimes puts ``etch_memory`` in the audio transcript.
+    That is the model's stage. It is not a general fact parser.
+    """
+    for pattern in (_SPOKEN_ETCH, _SPOKEN_ETCH_CALL):
+        match = pattern.search(text)
+        if match is None:
+            continue
+        fact = match.group(1).strip()
+        if fact:
+            return fact
+    return ""
+
+
 def _asks_to_remember(text: str) -> bool:
     """True when the holder asked to remember a fact, not only the verb."""
     if not re.search(r"\bremember\b", text, flags=re.IGNORECASE):
@@ -541,9 +568,40 @@ class HolderConfirm:
         if _role_of(item) not in {"assistant", "agent"}:
             return
         text = _text_of(item)
-        if text.strip():
-            self._heard_assistant = text
-            self._maybe_nudge_etch()
+        if not text.strip():
+            return
+        self._heard_assistant = text
+        if self._recover_spoken_etch(text):
+            return
+        self._maybe_nudge_etch()
+
+    def _recover_spoken_etch(self, text: str) -> bool:
+        """Stage a fact the model spoke as an etch_memory call, then say it."""
+        if self._mem.pending is not None or self._mem.merge_armed:
+            return False
+        fact = _spoken_etch_fact(text)
+        if not fact:
+            return False
+        if not self._request_text:
+            user = (
+                _last_user_text(_messages_from(self._session))
+                or self._last_user_final
+                or self._open_text
+            )
+            if user:
+                self._request_text = user
+                self._request_item = self._request_item or self._open_item
+        spoken = self._mem.stage_memory(fact, type="memory")
+        if _ends_with_spoken(text, spoken):
+            return True
+        say = getattr(self._session, "say", None)
+        if not callable(say):
+            return True
+        try:
+            say(spoken)
+        except Exception as exc:
+            log.warning("holder confirm: could not speak the staged sentence: %s", exc)
+        return True
 
     def _remember_request(self) -> str:
         """The holder line that asked to remember, if that is the latest one."""

@@ -57,8 +57,10 @@ Proposed. Not published.
   the sentence the tool returns, and stop. The model does not know that
   sentence until the tool returns it, and it must not speak the tool
   call. If it stops after the bridge without staging, the SDK asks it
-  once to invoke `etch_memory`. The model still stages. The SDK confirms.
-  The model does not.
+  once to invoke `etch_memory`. If it speaks an `etch_memory` tool call
+  instead of invoking it, the SDK stages that fact and speaks the
+  confirmation sentence. The model still provides the fact. The SDK
+  confirms. The model does not.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
   and discards the in-memory scratchpad at session end. `merge_now`
   stages a save. The same listener writes after the agent says

@@ -359,6 +359,54 @@ async def test_merge_request_final_does_not_drop_or_block_the_later_yes():
     assert mem.merge_armed is False
 
 
+async def test_spoken_etch_call_stages_and_a_later_yes_saves():
+    """Live 2026-11-03: the model spoke etch_memory instead of calling it."""
+    mem = FAFMemory("grok", api_key="k")
+    said: list[str] = []
+
+    class _Talks:
+        def __init__(self) -> None:
+            self.history = _Hist([
+                _Msg("user", "Please remember that my favorite color is cyan."),
+            ])
+
+        def say(self, text: str, **_kwargs: object) -> None:
+            said.append(text)
+            self.history._messages.append(_Msg("assistant", text))
+
+        def generate_reply(self, **_kwargs: object) -> None:
+            raise AssertionError("spoken etch must not also nudge")
+
+    listener = HolderConfirm(mem, _Talks())
+    listener._open_text = "Please remember that my favorite color is cyan."
+    listener._open_item = "req-1"
+    spoken_call = (
+        "Got it. <tool_call>etch_memory<arg_key>content</arg_key>"
+        "<arg_value>favorite color is cyan</arg_value></tool_call>"
+    )
+    listener._on_item(SimpleNamespace(item=_Msg("assistant", spoken_call)))
+    assert mem.pending is not None
+    assert mem.pending["content"] == "favorite color is cyan"
+    spoken = mem.pending["spoken"]
+    assert said == [spoken]
+
+    with patch.object(mem, "etch", new_callable=AsyncMock, return_value="saved") as etch:
+        echo = await listener.apply_final(
+            "Please remember that my favorite color is cyan.",
+            item_id="req-1",
+            messages=[_Msg("assistant", spoken)],
+        )
+        saved = await listener.apply_final(
+            "Yes.",
+            item_id="yes-1",
+            messages=[_Msg("assistant", spoken)],
+        )
+    etch.assert_awaited_once()
+    assert echo == ""
+    assert saved == "saved"
+    assert mem.pending is None
+
+
 def test_bridge_without_a_tool_asks_once_for_etch():
     """Live 2026-11-03: the model said "Got it." and never called etch."""
     mem = FAFMemory("grok", api_key="k")
