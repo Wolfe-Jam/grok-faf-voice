@@ -31,6 +31,7 @@ Use via `FAFMemory.tools(session)`:
 
 from __future__ import annotations
 
+import re
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
@@ -370,37 +371,55 @@ def _messages_from(session: Any) -> list[Any]:
     return []
 
 
-def _is_yes(text: str) -> bool:
-    """A short yes. The live transcript was ``Yes.``
-
-    Capitalisation and a trailing period are stripped. A longer line
-    such as ``Yes, please do.`` is not a yes: the live spoken word
-    was ``Yes.``, and that is the set this matches.
-    """
-    cleaned = text.strip().lower().strip(" .!?,")
-    return cleaned in _YES
-
-
-def _norm_sentence(text: str) -> str:
-    """Fold apostrophes and collapse whitespace. Keep the colon."""
-    folded = (
+def _fold_apostrophes(text: str) -> str:
+    return (
         text.replace("\u2019", "'")
         .replace("\u2018", "'")
         .replace("\u201c", '"')
         .replace("\u201d", '"')
     )
+
+
+def _norm_match(text: str) -> str:
+    """Lower-case, drop punctuation, collapse whitespace."""
+    folded = _fold_apostrophes(text).casefold()
+    folded = re.sub(r"[^\w\s]", " ", folded, flags=re.UNICODE)
     return " ".join(folded.split())
 
 
-def _ends_with_spoken(text: str, spoken: str) -> bool:
-    """True when ``spoken`` is the whole message or its last sentence.
+def _has_refusal(text: str) -> bool:
+    """True when the reply contains ``no`` or ``don't`` as words."""
+    folded = _fold_apostrophes(text).casefold()
+    return re.search(r"\b(?:no|don'?t|do not)\b", folded) is not None
 
-    A live turn was ``Got it. I'll remember this: favorite color is cyan.``
-    The required sentence is the ending. Words after that sentence
-    are a different question.
+
+def _is_yes(text: str) -> bool:
+    """A yes-prefix, unless the reply contains ``no`` or ``don't``.
+
+    ``Yes.`` and ``Yes, please do.`` both count. ``yes don't`` does not.
     """
-    body = _norm_sentence(text).rstrip()
-    sentence = _norm_sentence(spoken).rstrip()
+    if _has_refusal(text):
+        return False
+    folded = _norm_match(text)
+    if not folded:
+        return False
+    for token in sorted(_YES, key=len, reverse=True):
+        head = _norm_match(token)
+        if folded == head or folded.startswith(head + " "):
+            return True
+    return False
+
+
+def _ends_with_spoken(text: str, spoken: str) -> bool:
+    """True when ``spoken`` ends the message, after normalisation.
+
+    Punctuation, case, and whitespace are folded on both sides, so a
+    comma and a colon compare equal. The sentence still has to be the
+    end of the assistant message. A bridge may come first. Words after
+    the sentence do not confirm.
+    """
+    body = _norm_match(text)
+    sentence = _norm_match(spoken)
     if not sentence:
         return False
     if body == sentence:
@@ -408,7 +427,7 @@ def _ends_with_spoken(text: str, spoken: str) -> bool:
     if not body.endswith(sentence):
         return False
     prefix = body[: -len(sentence)]
-    return prefix[-1:].isspace() or prefix.endswith((".", "!", "?"))
+    return prefix.endswith(" ")
 
 
 # The sentence merge_now requires before it writes.
@@ -422,8 +441,8 @@ def holder_confirmed(messages: list[Any], spoken: str) -> bool:
     ``spoken``. A bridge such as ``Got it.`` may come first. A
     question after the sentence does not count. A yes to a later
     turn does not confirm an older sentence. A missing transcript
-    is not a confirmation. This function does not tell voices
-    apart. Session-only is ``FAFMemory.retention``.
+    is not a confirmation. Any user turn confirms. The second-voice
+    rule is the prompt plus the operator flags.
     """
     if not messages or not spoken:
         return False

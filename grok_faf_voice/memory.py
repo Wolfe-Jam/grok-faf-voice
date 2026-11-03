@@ -321,8 +321,9 @@ class FAFMemory:
 
         Session-only when the device is shared, the speaker is not the
         namepoint holder, or a child may be talking. No voice print is
-        consulted. A second voice is not identified in code. The
-        default is durable: the holder, on their device.
+        consulted. Any user turn confirms. The second-voice rule is
+        the prompt plus the operator flags. The default is durable:
+        the holder, on their device.
         """
         if (
             self._shared_device
@@ -347,11 +348,16 @@ class FAFMemory:
         """Hold a fact. Does not write the soul.
 
         Returns the exact sentence the agent must speak before
-        :meth:`commit_staged` will save it.
+        :meth:`commit_staged` will save it. One trailing period is
+        taken off the fact before that sentence is built, so
+        ``Main St.`` is spoken once.
         """
-        spoken = SPOKEN_FACT.format(content=content)
+        spoken_content = content.strip()
+        if spoken_content.endswith(".") and spoken_content[:-1].strip():
+            spoken_content = spoken_content[:-1].rstrip()
+        spoken = SPOKEN_FACT.format(content=spoken_content)
         self._pending = {
-            "content": content,
+            "content": spoken_content,
             "spoken": spoken,
             "type": type,
             "tags": list(tags or []),
@@ -398,6 +404,10 @@ class FAFMemory:
         ``replace=true`` and ``content`` set to the new body.
         ``get_soul`` returns the stored text (no banner). A leading
         banner is removed only when the remainder is the soul.
+        ``write_soul`` with ``replace=true`` and ``content`` stores
+        that string as the whole soul (``env.SOULS.put``, soul name
+        lowercased). Read from ``mcpaas-cf`` ``handler.ts``. A live
+        hosted round trip was not opened.
         A local ``.fafm`` is replaced atomically, mode 0600.
         ``removed == 0`` does not write.
         """
@@ -435,7 +445,14 @@ class FAFMemory:
         return {"removed": removed, "namepoint": self._soul}
 
     async def _replace_soul(self, content: str) -> str:
-        """Overwrite the hosted soul. Never calls ``delete_soul``."""
+        """Overwrite the hosted soul. Never calls ``delete_soul``.
+
+        Contract, read from ``mcpaas-cf`` ``handler.ts`` ``write_soul``:
+        when ``replace`` is true and ``content`` is set, the server
+        does ``env.SOULS.put(soulName, replaceContent)`` and the soul
+        name is lowercased. Voice keys may write only their own
+        namepoint. A live hosted call was not opened.
+        """
         args: dict[str, Any] = {
             "soul": self._soul,
             "replace": True,

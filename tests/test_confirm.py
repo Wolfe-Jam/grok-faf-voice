@@ -123,14 +123,46 @@ def test_live_bridge_and_yes_period_confirm():
     assert holder_confirmed(messages[:1], spoken) is False
 
 
-def test_live_yes_with_extra_words_does_not_confirm():
-    """The spoken yes was 'Yes.' A longer yes was not in that transcript."""
+def test_comma_sentence_and_yes_prefix_confirm():
+    """Punctuation folds. A yes may continue unless it contains no or don't."""
     spoken = SPOKEN_FACT.format(content="favorite color is cyan")
     messages = [
-        _Msg("assistant", spoken),
+        _Msg("assistant", "I'll remember this, favorite color is cyan."),
         _Msg("user", "Yes, please do."),
     ]
-    assert holder_confirmed(messages, spoken) is False
+    assert holder_confirmed(messages, spoken) is True
+    refused = [
+        _Msg("assistant", "I'll remember this, favorite color is cyan."),
+        _Msg("user", "Yes, don't"),
+    ]
+    assert holder_confirmed(refused, spoken) is False
+
+
+def test_live_transcript_lines_confirm():
+    """Lines from the 2026-11-03 grok-voice-3.0 session."""
+    spoken = SPOKEN_FACT.format(content="favorite color is cyan")
+    first = [
+        _Msg("assistant", "Got it. I'll remember this: favorite color is cyan."),
+        _Msg("user", "Yes."),
+    ]
+    retry = [
+        _Msg("assistant", "I'll remember this: favorite color is cyan."),
+        _Msg("user", "Yes."),
+    ]
+    save = [
+        _Msg("assistant", "I'll save what we discussed."),
+        _Msg("user", "Yes."),
+    ]
+    assert holder_confirmed(first, spoken) is True
+    assert holder_confirmed(retry, spoken) is True
+    assert holder_confirmed(save, SAVE_SPOKEN) is True
+
+
+def test_stage_strips_one_trailing_period():
+    mem = FAFMemory("grok", api_key="k")
+    spoken = mem.stage_memory("favorite color is cyan.")
+    assert spoken == "I'll remember this: favorite color is cyan."
+    assert mem.pending["content"] == "favorite color is cyan"
 
 
 def test_save_sentence_must_end_the_assistant_message():

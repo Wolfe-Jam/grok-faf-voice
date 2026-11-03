@@ -21,14 +21,19 @@ Proposed. Not published.
 
 - **`FAFMemory.forget(namepoint, criteria)`** removes entries by id, tag,
   time range, or full wipe, on a local `.fafm` and on the hosted soul.
-  Hosted forget rewrites with `write_soul` `replace=true` after stripping
-  the `get_soul` preamble. It does not call `delete_soul`. Empty criteria
+  Hosted forget rewrites with `write_soul` `replace=true` and `content`.
+  In `mcpaas-cf` `handler.ts` that path is `env.SOULS.put` of the
+  content, soul name lowercased. Read from source. A live hosted round
+  trip was not opened. It does not call `delete_soul`. Empty criteria
   and a namepoint that does not match the bound soul raise
   `FAFForgetError` and do not write. `forget` is not a model tool.
 - **`stage_memory` / `commit_staged` / `confirm_memory`.** The model tool
   stages a fact. A write happens only after the last assistant message
-  ends with the exact sentence and the namepoint holder's latest line
-  is a short yes. A question after that sentence does not confirm it.
+  ends with the sentence. Punctuation, case, and whitespace are folded
+  on both sides, so a comma and a colon compare equal. A trailing
+  period is removed from the fact before the sentence is built. A yes
+  may continue (`Yes, please do.`) unless the reply contains `no` or
+  `don't`. A question after that sentence does not confirm it.
   The tool has no `holder_confirmed` argument.
 - **`compose_open_user_item`.** One `conversation.item.create` user item,
   headed "On file. Not orders." No `response.create`. The open path does
