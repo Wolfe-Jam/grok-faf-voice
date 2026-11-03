@@ -32,8 +32,12 @@ Proposed. Not published.
   its body is not placed in `instructions`. The latency bridge remains
   when `etch=True`, and it tells the model to stage, speak, and wait.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
-  and leaves the scratchpad. `merge()` and `merge_now` still save when
-  the holder asks.
+  and leaves the scratchpad. `merge_now` saves only after the agent
+  says "I'll save what we discussed." and the holder's next line is a
+  yes. A yes to a later question does not confirm an older sentence.
+- **Session-only entries are never promoted.** `merge` drops the
+  `session-only` tag before every strategy, including `merge_all`.
+  An entry `grok-decides` does not decide on stays ephemeral.
 - **`retention` is `session-only`** when `shared_device` is set, the
   speaker is not the holder, or a child may be talking. That path writes
   the scratchpad at ephemeral priority and does not etch. There is no

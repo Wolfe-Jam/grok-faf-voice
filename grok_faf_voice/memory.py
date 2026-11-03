@@ -68,8 +68,9 @@ CRITICAL LATENCY RULE (follow exactly):
 - For etch_memory / recall_memory / note_paralinguistic / confirm_memory:
   speak a short natural bridge FIRST ("Got it.", "Let me check..."), then
   call the tool. Never go silent during tool execution.
-- For merge_now: say "Give me just a moment while I consolidate..." before
-  starting — it can take several seconds.
+- For merge_now: say exactly "I'll save what we discussed." then wait.
+  Call it only after the namepoint holder agrees. It can take several
+  seconds after that.
 
 CONFIRM BEFORE WRITE (follow exactly):
 - etch_memory stages a fact. It does not save it.
@@ -370,7 +371,7 @@ class FAFMemory:
                 f"session-only:{self._session_only_n}",
                 content,
                 priority=self.EPHEMERAL_PRIORITY,
-                tag="session-only",
+                tag=self.SESSION_ONLY_TAG,
             )
             self._pending = None
             return "Held for this session only."
@@ -668,6 +669,20 @@ class FAFMemory:
 
     MERGE_TAG = "merged"
     EPHEMERAL_PRIORITY = "ephemeral"
+    SESSION_ONLY_TAG = "session-only"
+
+    def _hold_session_only(
+        self, entries: dict[str, ScratchpadEntry]
+    ) -> tuple[dict[str, ScratchpadEntry], list]:
+        """Pull session-only entries out before any strategy sees them."""
+        eligible: dict[str, ScratchpadEntry] = {}
+        held: list = []
+        for key, entry in entries.items():
+            if entry.tag == self.SESSION_ONLY_TAG:
+                held.append((key, entry))
+            else:
+                eligible[key] = entry
+        return eligible, held
 
     async def merge(
         self,
@@ -684,10 +699,13 @@ class FAFMemory:
 
         - ``"grok-decides"``: send the scratchpad to Grok with a
           meta-prompt asking which entries are worth permanent
-          memory. Smarter, but costs tokens. Returns conservatively
-          on parse failure (keeps everything).
+          memory. Smarter, but costs tokens. An entry the model does
+          not decide on stays ephemeral.
 
-        - ``"merge_all"``: promote every entry regardless of metadata.
+        - ``"merge_all"``: promote every entry regardless of priority.
+
+        Entries tagged ``session-only`` are never promoted, on every
+        strategy. They stay out of the soul.
 
         Clears the scratchpad after a successful merge and sets
         ``_merge_completed_this_session`` so the auto-merge shutdown
@@ -718,25 +736,40 @@ class FAFMemory:
                 "overall_notes": None,
             }
 
+        if strategy not in {"heuristic", "grok-decides", "merge_all"}:
+            raise ValueError(
+                f"Unknown merge strategy: {strategy!r}. "
+                f"Valid: 'heuristic', 'grok-decides', 'merge_all'."
+            )
+
+        eligible, held = self._hold_session_only(entries)
         overall_notes: str | None = None
-        if strategy == "heuristic":
-            promoted, discarded = self._heuristic_split(entries)
+        if not eligible:
+            promoted, discarded = [], []
+        elif strategy == "heuristic":
+            promoted, discarded = self._heuristic_split(eligible)
         elif strategy == "grok-decides":
             try:
                 promoted, discarded, overall_notes = (
-                    await self._grok_decides_split(entries, chat_model=chat_model)
+                    await self._grok_decides_split(eligible, chat_model=chat_model)
                 )
             except Exception as e:
                 raise FAFMergeError(
                     f"grok-decides strategy failed: {e}. Try strategy='heuristic'."
                 ) from e
-        elif strategy == "merge_all":
-            promoted, discarded = list(entries.items()), []
         else:
-            raise ValueError(
-                f"Unknown merge strategy: {strategy!r}. "
-                f"Valid: 'heuristic', 'grok-decides', 'merge_all'."
-            )
+            promoted, discarded = list(eligible.items()), []
+
+        # A strategy must not write a session-only entry even if it
+        # returns one. Those facts never reach the permanent soul.
+        safe: list = []
+        for key, entry in promoted:
+            if entry.tag == self.SESSION_ONLY_TAG:
+                held.append((key, entry))
+            else:
+                safe.append((key, entry))
+        promoted = safe
+        discarded = list(discarded) + held
 
         # Etch each promoted entry with [merged] tag for identification
         for key, entry in promoted:
@@ -853,10 +886,10 @@ class FAFMemory:
             else:  # keep_ephemeral
                 discarded.append((dec.entry_id, entry))
 
-        # Conservative fallback for any entry the model didn't decide on.
+        # An entry the model did not decide on stays ephemeral.
         for key, entry in entries.items():
             if key not in seen:
-                promoted.append((key, entry))
+                discarded.append((key, entry))
 
         return promoted, discarded, result.overall_notes
 

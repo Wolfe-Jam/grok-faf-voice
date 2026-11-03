@@ -4,8 +4,9 @@
 Criteria combine with AND. A bare string fact has no id, tags, or
 timestamp, so id, tag, and time filters leave it in place. ``wipe``
 removes every fact. On a YAML soul it also clears ``index``, so a
-knowledge index cannot put a wiped fact back. The file is not deleted,
-and this module never calls ``delete_soul``.
+knowledge index cannot put a wiped fact back. Rewriting that YAML
+drops comments. Unknown keys and their order are kept. The file is
+not deleted, and this module never calls ``delete_soul``.
 """
 
 from __future__ import annotations
@@ -152,6 +153,7 @@ def _fact_matches(fact: Any, criteria: ForgetCriteria) -> bool:
 
 
 def _dump(doc: dict[str, Any]) -> str:
+    """Serialize a soul. Comments in the original YAML are not kept."""
     return yaml.safe_dump(
         doc,
         sort_keys=False,

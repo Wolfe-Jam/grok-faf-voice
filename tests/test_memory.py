@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -908,8 +908,8 @@ async def test_merge_grok_decides_treats_merge_into_as_promote():
     assert result["discarded"] == 0
 
 
-async def test_merge_grok_decides_keeps_undecided_entries_conservative():
-    """Entries the model omits from decisions get conservatively promoted."""
+async def test_merge_grok_decides_keeps_undecided_entries_ephemeral():
+    """Entries the model omits stay ephemeral. They are not promoted."""
     mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("decided", "v1")
     mem.scratchpad.update("forgotten", "v2")
@@ -935,9 +935,9 @@ async def test_merge_grok_decides_keeps_undecided_entries_conservative():
             with patch("grok_faf_voice.memory.Client", _FakeMcpClient):
                 result = await mem.merge(strategy="grok-decides")
 
-    # decided dropped, forgotten conservatively promoted
-    assert result["promoted"] == 1
-    assert result["discarded"] == 1
+    # decided dropped, forgotten stays ephemeral
+    assert result["promoted"] == 0
+    assert result["discarded"] == 2
 
 
 # ----------------------------------------------------------------
@@ -1389,6 +1389,93 @@ async def test_merge_grok_decides_populates_overall_notes():
 # ----------------------------------------------------------------
 
 
+def _confirmed_merge_context():
+    """Transcript where the holder agreed to save."""
+    from grok_faf_voice.tools import SAVE_SPOKEN
+
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
+
+    class _Hist:
+        def __init__(self, messages: list) -> None:
+            self._messages = messages
+
+        def messages(self) -> list:
+            return self._messages
+
+    class _Session:
+        def __init__(self, messages: list) -> None:
+            self.history = _Hist(messages)
+
+    class _Ctx:
+        def __init__(self, messages: list) -> None:
+            self.session = _Session(messages)
+
+    return _Ctx([_Msg("assistant", SAVE_SPOKEN), _Msg("user", "yes")])
+
+
+async def test_session_only_is_not_written_when_grok_decides_nothing():
+    """A session-only fact plus no decision writes nothing."""
+    mem = FAFMemory("grok", api_key="test-api-key")
+    mem.scratchpad.update(
+        "session-only:1",
+        "guest pin hint",
+        priority="high",
+        tag="session-only",
+    )
+
+    with patch.object(mem, "etch", new_callable=AsyncMock) as etch:
+        with patch.object(
+            mem, "_grok_decides_split", new_callable=AsyncMock
+        ) as grok:
+            result = await mem.merge(strategy="grok-decides")
+
+    grok.assert_not_called()
+    etch.assert_not_called()
+    assert result["promoted"] == 0
+    assert result["kept_ephemeral"] == 1
+
+
+async def test_merge_all_does_not_promote_session_only():
+    mem = FAFMemory("grok", api_key="test-api-key")
+    mem.scratchpad.update("keep", "holder fact", priority="high")
+    mem.scratchpad.update(
+        "session-only:1",
+        "guest fact",
+        priority="high",
+        tag="session-only",
+    )
+    captured: list = []
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeClient:
+        def __init__(self, transport):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured.append(args)
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.merge(strategy="merge_all")
+
+    assert result["promoted"] == 1
+    assert result["kept_ephemeral"] == 1
+    assert len(captured) == 1
+    assert "guest fact" not in captured[0]["entry"]
+
+
 async def test_merge_now_emits_hold_and_confirmation():
     """make_merge_tool's body calls session.say twice: hold + confirmation."""
     from grok_faf_voice.tools import make_merge_tool
@@ -1409,16 +1496,7 @@ async def test_merge_now_emits_hold_and_confirmation():
 
     with patch.object(mem, "merge", side_effect=_fake_merge):
         tool = make_merge_tool(mem, session)
-        # FunctionTool wraps the original; .__wrapped__ exposes it for direct invocation.
-        underlying = getattr(tool, "__wrapped__", None) or getattr(
-            tool, "fnc", None
-        ) or tool
-        if callable(underlying):
-            try:
-                await underlying(None)  # context unused
-            except TypeError:
-                # Some FunctionTool variants need keyword-only call shape
-                await underlying(context=None)
+        await tool._func(_confirmed_merge_context())
 
     assert len(session.say_calls) == 2, session.say_calls
     assert "moment" in session.say_calls[0].lower()
@@ -1448,15 +1526,22 @@ async def test_merge_now_uses_grok_decides_strategy():
 
     with patch.object(mem, "merge", side_effect=_capture):
         tool = make_merge_tool(mem, session)
-        underlying = getattr(tool, "__wrapped__", None) or getattr(
-            tool, "fnc", None
-        ) or tool
-        try:
-            await underlying(None)
-        except TypeError:
-            await underlying(context=None)
+        await tool._func(_confirmed_merge_context())
 
     assert captured_strategy["s"] == "grok-decides"
+
+
+async def test_merge_now_without_a_yes_does_not_write():
+    from grok_faf_voice.tools import make_merge_tool
+
+    mem = FAFMemory("grok", api_key="k")
+    session = _FakeAgentSession()
+    with patch.object(mem, "merge", new_callable=AsyncMock) as merge:
+        tool = make_merge_tool(mem, session)
+        result = await tool._func(None)
+    merge.assert_not_called()
+    assert session.say_calls == []
+    assert result.startswith("Not saved")
 
 
 # ----------------------------------------------------------------

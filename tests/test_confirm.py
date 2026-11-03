@@ -100,6 +100,18 @@ async def test_yes_before_the_sentence_is_not_confirmation():
     assert holder_confirmed(messages, spoken) is False
 
 
+def test_a_later_yes_does_not_confirm_an_older_fact():
+    """The yes was to the booking, not to the PIN hint."""
+    spoken = "I'll remember this: my PIN hint is blue."
+    messages = [
+        _Msg("assistant", spoken),
+        _Msg("user", "no, don't"),
+        _Msg("assistant", "Want me to book the table?"),
+        _Msg("user", "yes"),
+    ]
+    assert holder_confirmed(messages, spoken) is False
+
+
 async def test_commit_refuses_a_different_fact():
     mem = FAFMemory("grok", api_key="k")
     mem.stage_memory("favorite color is cyan")

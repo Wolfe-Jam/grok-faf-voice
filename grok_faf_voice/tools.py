@@ -238,16 +238,13 @@ def make_merge_tool(
 ):
     """Return an @function_tool that promotes scratchpad → soul.
 
-    The model fires this when the user signals end-of-conversation
-    with phrases like "save this", "commit our notes", "remember all
-    of this". After firing, the scratchpad is cleared and important
-    items are permanent in the soul.
+    The model says ``SAVE_SPOKEN`` and waits. This tool writes only
+    after that sentence is the last assistant line before the holder's
+    yes. Session-only scratchpad entries are not promoted.
 
-    Pattern B (heavy tool): closes over ``session`` to emit an
-    explicit verbal hold via ``session.say()`` before the multi-second
-    merge runs, then a short confirmation after. Without this, the
-    realtime stream goes silent for several seconds and the user
-    perceives a stall.
+    Pattern B (heavy tool): after that confirm, it closes over
+    ``session`` to emit a verbal hold via ``session.say()`` before the
+    multi-second merge, then a short confirmation after.
     """
     from grok_faf_voice.memory import (
         FAFAuthRequiredError,
@@ -259,23 +256,24 @@ def make_merge_tool(
 
     @function_tool
     async def merge_now(context: RunContext) -> str:
-        """Promote in-session scratchpad memories to permanent soul.
+        """Save the scratchpad after the holder confirms.
 
-        Use when the user says "save this", "save what we discussed",
-        "commit our notes", "remember all of this", or otherwise
-        signals they want to lock in the conversation. Returns a
-        count of what was kept and what was discarded.
+        Say exactly "I'll save what we discussed." and wait. Call this
+        only after the namepoint holder agrees. A yes to a later
+        question does not count. Session-only facts are not saved.
 
         CRITICAL LATENCY RULE (multi-second tool):
-        - This SDK emits an explicit verbal hold ("Give me just a
-          moment while I consolidate everything...") before the merge
-          runs and a short confirmation after. The model does not need
-          to speak a bridge here — the SDK handles it.
+        - After the holder agrees, this SDK says "Give me just a
+          moment while I consolidate everything..." before the merge
+          runs, and a short confirmation after.
         """
-        # tool.about_to_run / tool.completed come from the global
-        # wrapper. Domain-specific merge.starting + merge.completed
-        # fire here so subscribers can observe user-initiated merges
-        # even without enable_global_tool_bus.
+        _ = context
+        messages = _messages_from(getattr(context, "session", None))
+        if not holder_confirmed(messages, SAVE_SPOKEN):
+            return (
+                "Not saved. Say this exact sentence, then wait for the "
+                f"namepoint holder to confirm: {SAVE_SPOKEN}"
+            )
         try:
             await session.say(
                 "Give me just a moment while I consolidate everything..."
@@ -376,11 +374,16 @@ def _is_yes(text: str) -> bool:
     return cleaned in _YES
 
 
-def holder_confirmed(messages: list[Any], spoken: str) -> bool:
-    """True when the holder said yes after the agent spoke ``spoken``.
+# The sentence merge_now requires before it writes.
+SAVE_SPOKEN = "I'll save what we discussed."
 
-    A missing transcript is not a confirmation. The model's own call
-    cannot set this true.
+
+def holder_confirmed(messages: list[Any], spoken: str) -> bool:
+    """True when the holder's latest line is a yes to ``spoken``.
+
+    ``spoken`` must be in the last assistant message before that yes.
+    A yes to a later question does not confirm an older sentence.
+    A missing transcript is not a confirmation.
     """
     if not messages or not spoken:
         return False
@@ -390,11 +393,14 @@ def holder_confirmed(messages: list[Any], spoken: str) -> bool:
             last_user = index
     if last_user is None or not _is_yes(_text_of(messages[last_user])):
         return False
-    for message in messages[:last_user]:
-        role = _role_of(message)
-        if role in {"assistant", "agent"} and spoken in _text_of(message):
-            return True
-    return False
+    previous = None
+    for message in reversed(messages[:last_user]):
+        if _role_of(message) in {"assistant", "agent"}:
+            previous = message
+            break
+    if previous is None:
+        return False
+    return spoken in _text_of(previous)
 
 
 # ----------------------------------------------------------------

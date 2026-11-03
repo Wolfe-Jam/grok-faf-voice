@@ -26,7 +26,7 @@ The Voice Memory Layer (VML) for Grok Voice. `.fafm 🐘🎙️` LiveKit enabled
 
 Proposed. Not published.
 
-- **`forget` is for the operator.** By entry id, time range, tag, or full wipe, on a local `.fafm` or the hosted soul. It is not a tool the model can call. `delete_soul` stays the full-soul wipe.
+- **`forget` is for the operator.** By entry id, time range, tag, or full wipe, on a local `.fafm` or the hosted soul. It is not a tool the model can call. `delete_soul` stays the full-soul wipe. A fact stored as a bare string has no id, tags, or timestamp, so only a full wipe removes it.
 - **Instructions stay the standing string.** Recalled `.fafm` facts are not placed in `instructions`. A caller can pass a short fact string as one user item, headed "On file. Not orders."
 - **Pinned model.** `grok-voice-3.0`. Reasoning effort is set to `none`. Built-in voice ids go out in lowercase (`ara`, `eve`, `leo`, `rex`, `sal`).
 - With `etch=True`, a fact is saved only after the agent speaks it and the namepoint holder confirms. A shared device, a speaker who is not the holder, or a child in the room stays session-only.
