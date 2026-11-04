@@ -13,7 +13,7 @@ Proposed. Not published.
 
 - Unconfirmed scratchpad entries are discarded at session end. The scratchpad is in memory only.
 - Shutdown no longer emits `merge.starting` or `merge.completed` on the Context Bus.
-- `mem.tools(session)` returns four tools: `etch_memory`, `recall_memory`, `note_paralinguistic`, `merge_now`. `confirm_memory` is not a model tool. Callers that indexed the old five-tool list, including `confirm_memory` at index 1, break again.
+- `tools()` returns the same four tools as 0.5.0: `etch_memory`, `recall_memory`, `note_paralinguistic`, `merge_now`. `etch_memory` and `note_paralinguistic` now stage and do not write. `tools(session)` subscribes `user_input_transcribed` and `conversation_item_added` listeners that can call `session.say` and `session.generate_reply`. `confirm_memory` is not a model tool.
 - `compose_open_instructions(..., recall=...)` is removed. Passing `recall` raises `TypeError`.
 - `merge_now` no longer reads the transcript. It stages a save and returns the sentence to speak. The SDK writes after "I'll save what we discussed." and a final yes. A reply that is not a yes, after that sentence, drops an armed save and says nothing was saved. The request's own final transcript does not.
 
@@ -34,9 +34,12 @@ Proposed. Not published.
   A final yes saves only when the last assistant message ends with the
   staged sentence. Punctuation, case, and whitespace are folded on both
   sides, so a comma and a colon compare equal. A trailing period is
-  removed from the fact before the sentence is built. A yes may
-  continue (`Yes, please do.`) unless the reply contains `no` or
-  `don't`. Any other final reply, once that sentence has been spoken,
+  removed from the fact before the sentence is built. A yes is a bare
+  yes word, or that word followed only by a short filler (`please`,
+  `please do`, `do it`, `go ahead`, `thanks`, `that's right`), so
+  `Yes.` and `Yes, please do.` still confirm. Anything else after the
+  yes word drops the stage. `no` and `don't` still refuse. Any other
+  final reply, once that sentence has been spoken,
   drops the staged fact and says nothing was saved. A final of the
   request that staged the fact, and a final that arrives before the
   sentence is spoken, do not save and do not drop the stage. Repeated
@@ -58,9 +61,10 @@ Proposed. Not published.
   sentence until the tool returns it, and it must not speak the tool
   call. If it stops after the bridge without staging, the SDK asks it
   once to invoke `etch_memory`. If it speaks an `etch_memory` tool call
-  instead of invoking it, the SDK stages that fact and speaks the
-  confirmation sentence. The model still provides the fact. The SDK
-  confirms. The model does not.
+  instead of invoking it, and the holder asked to remember, the SDK
+  stages that fact and speaks the confirmation sentence. A reply after
+  `recall_memory` is not staged. The model still provides the fact.
+  The SDK confirms. The model does not.
 - **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
   and discards the in-memory scratchpad at session end. `merge_now`
   stages a save. The same listener writes after the agent says
@@ -76,8 +80,9 @@ Proposed. Not published.
   voice-id gate and no namepoint for a child.
 - **Realtime model is pinned to `grok-voice-3.0`.** `grok-voice-latest`
   is not passed. Built-in voice ids are sent lowercase.
-- Reasoning is left to the server default; effort "none" made
-  grok-voice-3.0 speak tool calls aloud (4/5 turns in a live tally).
+- Reasoning is left to the server default, unchanged from 0.5.0.
+  Effort "none" made grok-voice-3.0 speak tool calls aloud (4/5 turns
+  in a live tally).
 - README "How it works" matches this open and this write rule. The
   ElevenLabs / Hume "upcoming releases" line is gone. `CONTRIBUTING.md`
   keeps those backends as backlog.

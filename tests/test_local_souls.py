@@ -139,6 +139,7 @@ async def test_to_file_roundtrip_byte_identical(knowledge_soul_path, tmp_path):
     assert Path(out).read_text(encoding="utf-8") == knowledge_soul_path.read_text(
         encoding="utf-8"
     )
+    assert Path(out).stat().st_mode & 0o777 == 0o600
 
 
 # --- recall_for_prompt on a local soul ------------------------------------

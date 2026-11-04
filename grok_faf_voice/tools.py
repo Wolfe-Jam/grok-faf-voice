@@ -131,6 +131,10 @@ def make_recall_tool(mem: FAFMemory, bus: ContextBus | None = None):
         """
         # tool.about_to_run / tool.completed come from the global
         # wrapper. No domain-specific event for recall.
+        confirm = getattr(mem, "_confirm", None)
+        note_recall = getattr(confirm, "note_recall", None)
+        if callable(note_recall):
+            note_recall()
         try:
             return await mem.get()
         except FAFRecallError as e:
@@ -202,9 +206,10 @@ def make_merge_tool(
 
     The model says ``SAVE_SPOKEN`` and stops. The SDK listener writes
     when the holder's next final reply is a yes and that sentence ends
-    the last assistant message. Saying the sentence and then hearing
-    yes also saves, which is the live order. Session-only scratchpad
-    entries are not promoted. This tool does not read the transcript.
+    the last assistant message. With no arm, that yes saves only before
+    the listener has resolved a turn. After that, ``merge_now`` has to
+    arm the save again. Session-only scratchpad entries are not
+    promoted. This tool does not read the transcript.
     """
     _ = bus or mem.bus
     _ = session
@@ -240,7 +245,9 @@ def make_merge_tool(
     return _mark_bus_wrapped(merge_now)
 
 
-_YES = {
+# A bare token confirms. "please" is not one: "Please tell me the weather."
+# is a request. Fillers may follow the token and nothing else may.
+_YES_WORDS = (
     "yes",
     "yeah",
     "yep",
@@ -250,13 +257,15 @@ _YES = {
     "ok",
     "okay",
     "sure",
-    "please",
-    "do it",
+)
+_YES_FILLERS = (
+    "that's right",
     "go ahead",
-    "yes please",
-    "yeah please",
-    "ok please",
-}
+    "do it",
+    "please",
+    "thanks",
+    "do",
+)
 
 
 def _role_of(message: Any) -> str:
@@ -331,20 +340,42 @@ def _has_refusal(text: str) -> bool:
     return re.search(r"\b(?:no|don'?t|do not)\b", folded) is not None
 
 
-def _is_yes(text: str) -> bool:
-    """A yes-prefix, unless the reply contains ``no`` or ``don't``.
+def _filler_norms() -> tuple[str, ...]:
+    norms = {_norm_match(filler) for filler in _YES_FILLERS}
+    norms.discard("")
+    return tuple(sorted(norms, key=len, reverse=True))
 
-    ``Yes.`` and ``Yes, please do.`` both count. ``yes don't`` does not.
+
+def _only_fillers(rest: str) -> bool:
+    """True when ``rest`` is empty or only the closed filler phrases."""
+    fillers = _filler_norms()
+    while rest:
+        for filler in fillers:
+            if rest == filler or rest.startswith(filler + " "):
+                rest = rest[len(filler) :].lstrip()
+                break
+        else:
+            return False
+    return True
+
+
+def _is_yes(text: str) -> bool:
+    """A bare yes, or a yes followed only by a short filler.
+
+    ``Yes.`` and ``Yes, please do.`` count. A correction after the yes
+    word does not. ``please`` alone does not. ``no`` and ``don't`` do not.
     """
     if _has_refusal(text):
         return False
     folded = _norm_match(text)
     if not folded:
         return False
-    for token in sorted(_YES, key=len, reverse=True):
+    for token in sorted(_YES_WORDS, key=len, reverse=True):
         head = _norm_match(token)
-        if folded == head or folded.startswith(head + " "):
+        if folded == head:
             return True
+        if folded.startswith(head + " "):
+            return _only_fillers(folded[len(head) + 1 :])
     return False
 
 
@@ -446,15 +477,20 @@ def _spoken_etch_fact(text: str) -> str:
     """The fact inside a tool call the model spoke instead of invoking.
 
     Safety net for a rare slip. It is not a general fact parser.
+    The ``etch_memory(content=...)`` shape has to be the whole line.
+    A sentence that mentions that shape is prose.
     """
-    for pattern in (_SPOKEN_ETCH, _SPOKEN_ETCH_CALL, _SPOKEN_ETCH_INVOKE):
+    for pattern in (_SPOKEN_ETCH, _SPOKEN_ETCH_INVOKE):
         match = pattern.search(text)
         if match is None:
             continue
         fact = match.group(1).strip()
         if fact:
             return fact
-    return ""
+    match = _SPOKEN_ETCH_CALL.fullmatch(text.strip())
+    if match is None:
+        return ""
+    return match.group(1).strip()
 
 
 def _asks_to_remember(text: str) -> bool:
@@ -488,12 +524,41 @@ def _user_after_last_assistant(messages: list[Any]) -> str:
     return ""
 
 
+def _item_id_of(message: Any) -> str | None:
+    """The history item id, when the message carries one."""
+    if isinstance(message, dict):
+        value = message.get("id")
+        if value is None:
+            value = message.get("item_id")
+    else:
+        value = getattr(message, "id", None)
+        if value is None:
+            value = getattr(message, "item_id", None)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _latest_user_item(messages: list[Any]) -> tuple[str, str | None]:
+    """The latest user line and its item id, or empty when there is none."""
+    text = ""
+    item_id: str | None = None
+    for message in messages:
+        if _role_of(message) != "user":
+            continue
+        body = _text_of(message).strip()
+        if not body:
+            continue
+        text = body
+        item_id = _item_id_of(message)
+    return text, item_id
+
+
 def _is_bare_yes(text: str) -> bool:
     """True when the whole reply is one yes token, such as ``Yes.``"""
     folded = _norm_match(text)
-    if not folded or not _is_yes(text):
-        return False
-    return folded in {_norm_match(token) for token in _YES}
+    return bool(folded) and folded in {_norm_match(token) for token in _YES_WORDS}
 
 
 def _subscribe(session: Any, event: str, callback: Any) -> None:
@@ -534,6 +599,11 @@ class HolderConfirm:
         self._finished = False
         self._last_user_final = ""
         self._nudged_for = ""
+        self._nudge_closed = False
+        self._resolved_norm = ""
+        self._after_recall = False
+        self._recall_item: str | None = None
+        self._recall_reply_seen = False
 
     @property
     def session(self) -> Any | None:
@@ -556,8 +626,16 @@ class HolderConfirm:
         """
         self._finished = False
         self._claimed = False
+        self._after_recall = False
+        self._recall_reply_seen = False
         self._has_snapshot = True
         self._assistant_at_stage = self._assistant_text(None)
+        if self._request_item is None:
+            _text, item_id = _latest_user_item(_messages_from(self._session))
+            if item_id:
+                self._request_item = item_id
+                if not self._request_text and _text:
+                    self._request_text = _text
         if not self._request_text and self._open_text:
             self._request_text = self._open_text
             self._request_item = self._open_item
@@ -576,36 +654,48 @@ class HolderConfirm:
         if not text.strip():
             return
         self._heard_assistant = text
+        if self._after_recall:
+            self._recall_reply_seen = True
+            return
         if self._recover_spoken_etch(text):
             return
         self._maybe_nudge_etch()
 
+    def note_recall(self) -> None:
+        """The assistant's next lines are a recall, not a remember."""
+        self._after_recall = True
+        self._recall_reply_seen = False
+        self._recall_item = self._open_item
+
     def _recover_spoken_etch(self, text: str) -> bool:
-        """Stage a fact the model spoke as an etch_memory call, then say it."""
+        """Stage a fact the model spoke as an etch_memory call, then say it.
+
+        Only after the holder asked to remember. A recall reply is data.
+        """
         if self._mem.pending is not None or self._mem.merge_armed:
+            return False
+        if self._after_recall or not self._remember_request():
             return False
         fact = _spoken_etch_fact(text)
         if not fact:
             return False
         if not self._request_text:
-            user = (
-                _last_user_text(_messages_from(self._session))
-                or self._last_user_final
-                or self._open_text
-            )
-            if user:
-                self._request_text = user
+            request = self._remember_request()
+            if request:
+                self._request_text = request
                 self._request_item = self._request_item or self._open_item
         spoken = self._mem.stage_memory(fact, type="memory")
         if _ends_with_spoken(text, spoken):
             return True
         say = getattr(self._session, "say", None)
         if not callable(say):
+            self._mem.drop_pending()
             return True
         try:
             say(spoken)
         except Exception as exc:
             log.warning("holder confirm: could not speak the staged sentence: %s", exc)
+            self._mem.drop_pending()
         return True
 
     def _remember_request(self) -> str:
@@ -626,6 +716,8 @@ class HolderConfirm:
         never calls ``etch_memory``. One ``generate_reply`` asks it to
         call the tool. The model still stages. This does not write.
         """
+        if self._nudge_closed:
+            return
         if self._mem.pending is not None or self._mem.merge_armed:
             return
         request = self._remember_request()
@@ -645,6 +737,16 @@ class HolderConfirm:
         """Final transcripts only. Interim replies do not save or drop."""
         transcript = str(getattr(ev, "transcript", "") or "")
         item_id = getattr(ev, "item_id", None)
+        if transcript.strip() and self._after_recall and self._recall_reply_seen:
+            same_item = bool(
+                item_id and self._recall_item and item_id == self._recall_item
+            )
+            if not same_item:
+                self._after_recall = False
+                self._recall_reply_seen = False
+        if transcript.strip() and self._nudge_closed:
+            if _norm_match(transcript) != self._resolved_norm:
+                self._nudge_closed = False
         if getattr(ev, "is_final", False) and transcript.strip():
             self._last_user_final = transcript
         if not getattr(ev, "is_final", False):
@@ -760,6 +862,12 @@ class HolderConfirm:
             if not self._finished:
                 self._claimed = False
 
+    def _close_nudge(self, transcript: str) -> None:
+        """This turn is resolved. Do not ask the model to stage it again."""
+        self._finished = True
+        self._nudge_closed = True
+        self._resolved_norm = _norm_match(transcript)
+
     async def _resolve_fact(
         self,
         transcript: str,
@@ -770,9 +878,9 @@ class HolderConfirm:
             return ""
         assistant = self._assistant_text(messages)
         if _is_yes(transcript) and _ends_with_spoken(assistant, pending["spoken"]):
-            self._finished = True
+            self._close_nudge(transcript)
             return await self._commit(pending)
-        self._finished = True
+        self._close_nudge(transcript)
         self._mem.drop_pending()
         log.info("holder confirm: dropped")
         await self._say("Nothing was saved.")
@@ -786,8 +894,14 @@ class HolderConfirm:
                 pending["content"], holder_confirmed=True
             )
         except FAFAuthRequiredError as exc:
+            log.warning("holder confirm: not saved: %s", exc)
+            self._mem.drop_pending()
+            await self._say("Not saved.")
             return self._mem.note_confirm_result(str(exc))
         except FAFEtchError as exc:
+            log.warning("holder confirm: not saved: %s", exc)
+            self._mem.drop_pending()
+            await self._say("Not saved.")
             return self._mem.note_confirm_result(f"Not saved: {exc}")
         if pending.get("type") == "paralinguistic":
             await self._mem.bus.emit_paralinguistic_detected(

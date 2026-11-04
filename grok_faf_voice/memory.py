@@ -619,7 +619,7 @@ class FAFMemory:
         >>> path = await mem.to_file("backup.fafm")
         """
         p = Path(path)
-        p.write_text(await self.get(), encoding="utf-8")
+        _write_text_owner_only(p, await self.get())
         return p
 
     # -- parsed accessors -------------------------------------------------
