@@ -20,3 +20,6 @@ grok-soul-*.bak
 # faf-cli sync artifacts (per-project, not tracked here)
 CLAUDE.md
 MEMORY.md
+
+# uv.lock: local installer pin, recreated with `uv lock` (PyPI users install from pyproject.toml)
+uv.lock

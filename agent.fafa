@@ -3,7 +3,7 @@ agent:
   name: grok-faf-voice
   displayName: grok-faf-voice
   id: urn:air:faf.one:agent:grok-faf-voice
-  version: 0.5.0
+  version: 0.6.0
   description: "Voice agents that remember: the Voice Memory Layer for Grok Voice, on LiveKit."
   homepage: https://faf.one/voice
 capabilities:

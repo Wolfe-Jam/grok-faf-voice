@@ -846,6 +846,8 @@ class FAFMemory:
 
         eligible, held = self._hold_session_only(entries)
         overall_notes: str | None = None
+        promoted: list[tuple[str, ScratchpadEntry]]
+        discarded: list[tuple[str, ScratchpadEntry]]
         if not eligible:
             promoted, discarded = [], []
         elif strategy == "heuristic":
