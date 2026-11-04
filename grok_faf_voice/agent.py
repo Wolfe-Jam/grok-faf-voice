@@ -35,7 +35,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from dotenv import load_dotenv
@@ -111,7 +111,7 @@ def compose_open_instructions(
     return "\n\n".join(parts)
 
 
-def compose_open_user_item(facts: str) -> dict[str, object]:
+def compose_open_user_item(facts: str) -> dict[str, Any]:
     """One user item for caller-supplied facts. No ``response.create``.
 
     The open path does not fill this from ``recall_for_prompt()``.
