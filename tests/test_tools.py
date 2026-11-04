@@ -52,8 +52,8 @@ def test_make_merge_tool_returns_object():
     assert tool is not None
 
 
-def test_tools_factory_quartet_distinct():
-    """All four tools are distinct objects."""
+def test_tools_factory_set_distinct():
+    """The memory tools are distinct objects. forget is not one of them."""
     mem = FAFMemory("grok")
     etch = make_etch_tool(mem)
     recall = make_recall_tool(mem)
@@ -62,8 +62,8 @@ def test_tools_factory_quartet_distinct():
     assert len({id(etch), id(recall), id(para), id(merge)}) == 4
 
 
-def test_fafmemory_tools_returns_quartet():
-    """FAFMemory.tools(session) returns etch + recall + paralinguistic + merge_now."""
+def test_fafmemory_tools_returns_the_set_without_forget():
+    """tools(session) does not expose confirm_memory or forget."""
     mem = FAFMemory("grok")
     tools = mem.tools(_FakeSession())
     assert len(tools) == 4
@@ -74,3 +74,6 @@ def test_fafmemory_tools_returns_quartet():
         "note_paralinguistic",
         "merge_now",
     }
+    assert "confirm_memory" not in names
+    assert "forget" not in names
+    assert not any("forget" in name for name in names)

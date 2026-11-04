@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -64,8 +64,8 @@ class _FakeSession:
         return None
 
 
-def test_tools_returns_quartet():
-    """tools(session) returns etch + recall + paralinguistic + merge_now."""
+def test_tools_returns_the_set_without_forget():
+    """tools(session) does not expose confirm_memory or forget."""
     mem = FAFMemory("grok")
     tools = mem.tools(_FakeSession())
     assert len(tools) == 4
@@ -76,6 +76,8 @@ def test_tools_returns_quartet():
         "note_paralinguistic",
         "merge_now",
     }
+    assert "confirm_memory" not in names
+    assert "forget" not in names
 
 
 @pytest.mark.network
@@ -206,22 +208,34 @@ async def test_etch_raises_auth_error_when_no_api_key():
 
 
 async def test_etch_tool_returns_friendly_message_when_no_api_key():
-    """The @function_tool wrapper should catch FAFAuthRequiredError
-    and return the friendly text — never a Python traceback to the
-    realtime model.
+    """Staging does not need a key. The write, after the holder confirms,
+    returns the friendly Voice API key text — never a traceback.
     """
-    from grok_faf_voice.tools import make_etch_tool
+    from grok_faf_voice.tools import HolderConfirm
+
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
 
     with patch.dict(os.environ, {}, clear=True):
         mem = FAFMemory("grok")
-        tool = make_etch_tool(mem)
+        spoken = mem.stage_memory("hello")
 
-        # FunctionTool wraps the original; we invoke the underlying
-        # callable directly via .__wrapped__ if exposed, else via .info.
-        callable_fn = getattr(tool, "__wrapped__", None) or tool.info.callable
-        result = await callable_fn(None, "hello")
+        class TripwireClient:
+            def __init__(self, url):
+                raise AssertionError(
+                    "Client should not be constructed when no API key"
+                )
+
+        with patch("grok_faf_voice.memory.Client", TripwireClient):
+            result = await HolderConfirm(mem, None).apply_final(
+                "yes",
+                messages=[_Msg("assistant", spoken)],
+            )
 
         assert "Voice API key" in result
+        assert "Traceback" not in result
 
 
 async def test_etch_wraps_invalid_soul_tool_error():
@@ -880,8 +894,8 @@ async def test_merge_grok_decides_treats_merge_into_as_promote():
     assert result["discarded"] == 0
 
 
-async def test_merge_grok_decides_keeps_undecided_entries_conservative():
-    """Entries the model omits from decisions get conservatively promoted."""
+async def test_merge_grok_decides_keeps_undecided_entries_ephemeral():
+    """Entries the model omits stay ephemeral. They are not promoted."""
     mem = FAFMemory("grok", api_key="test-api-key")
     mem.scratchpad.update("decided", "v1")
     mem.scratchpad.update("forgotten", "v2")
@@ -907,9 +921,9 @@ async def test_merge_grok_decides_keeps_undecided_entries_conservative():
             with patch("grok_faf_voice.memory.Client", _FakeMcpClient):
                 result = await mem.merge(strategy="grok-decides")
 
-    # decided dropped, forgotten conservatively promoted
-    assert result["promoted"] == 1
-    assert result["discarded"] == 1
+    # decided dropped, forgotten stays ephemeral
+    assert result["promoted"] == 0
+    assert result["discarded"] == 2
 
 
 # ----------------------------------------------------------------
@@ -1071,8 +1085,8 @@ async def test_attach_auto_merge_keeps_session_on_close_for_observability():
     assert len(session.on_handlers["close"]) == 1
 
 
-async def test_shutdown_callback_logs_completed_to_ledger():
-    """Successful shutdown callback writes status='completed' + counts to ledger."""
+async def test_shutdown_callback_logs_held_to_ledger():
+    """Shutdown holds the scratchpad. It does not etch, and it does not merge."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
@@ -1108,23 +1122,21 @@ async def test_shutdown_callback_logs_completed_to_ledger():
     assert len(ledger.attempts) == 1
     rec = ledger.attempts[0]
     assert rec["session_id"] == "sess-shutdown-ok"
-    assert rec["status"] == "completed"
-    assert rec["promoted"] == 1
-    assert rec["kept_ephemeral"] == 0
+    assert rec["status"] == "held"
+    assert rec["promoted"] == 0
+    assert rec["kept_ephemeral"] == 1
     assert rec["merged"] == 0
 
 
-async def test_shutdown_callback_logs_partial_or_failed_on_exception():
-    """When merge raises, the callback writes status='partial_or_failed'
-    + the error string and DOES NOT re-raise (shutdown must complete).
-    """
+async def test_shutdown_callback_does_not_etch():
+    """A patched etch that would raise is never called. Status stays held."""
     from grok_faf_voice import InMemoryVoiceSessionLedger
 
     ledger = InMemoryVoiceSessionLedger()
     mem = FAFMemory("grok", api_key="k", ledger=ledger)
     mem.scratchpad.update("k", "v")
 
-    session = _FakeAgentSession(session_id="sess-shutdown-fail")
+    session = _FakeAgentSession(session_id="sess-shutdown-hold")
     ctx = _FakeJobContext()
 
     async def _boom(*_args, **_kwargs):
@@ -1133,15 +1145,16 @@ async def test_shutdown_callback_logs_partial_or_failed_on_exception():
     mem.attach_auto_merge(session, ctx, strategy="heuristic")
     callback = ctx.shutdown_callbacks[0]
 
-    with patch.object(mem, "etch", side_effect=_boom):
-        # Must not raise — shutdown completes cleanly.
+    with patch.object(mem, "etch", side_effect=_boom) as etch:
         await callback()
+        etch.assert_not_called()
 
     assert len(ledger.attempts) == 1
     rec = ledger.attempts[0]
-    assert rec["session_id"] == "sess-shutdown-fail"
-    assert rec["status"] == "partial_or_failed"
-    assert "etch went sideways" in rec["error"]
+    assert rec["session_id"] == "sess-shutdown-hold"
+    assert rec["status"] == "held"
+    assert rec["promoted"] == 0
+    assert rec["kept_ephemeral"] == 1
 
 
 async def test_shutdown_callback_no_ops_when_merge_already_completed():
@@ -1219,9 +1232,9 @@ async def test_attach_auto_merge_resets_flags_for_session_reuse():
 
     assert len(ledger.attempts) == 2
     assert ledger.attempts[0]["session_id"] == "sess-1"
-    assert ledger.attempts[0]["status"] == "completed"
+    assert ledger.attempts[0]["status"] == "held"
     assert ledger.attempts[1]["session_id"] == "sess-2"
-    assert ledger.attempts[1]["status"] == "completed"
+    assert ledger.attempts[1]["status"] == "held"
 
 
 async def test_shutdown_callback_does_not_propagate_unexpected_errors():
@@ -1362,15 +1375,74 @@ async def test_merge_grok_decides_populates_overall_notes():
 # ----------------------------------------------------------------
 
 
+async def test_session_only_is_not_written_when_grok_decides_nothing():
+    """A session-only fact plus no decision writes nothing."""
+    mem = FAFMemory("grok", api_key="test-api-key")
+    mem.scratchpad.update(
+        "session-only:1",
+        "guest pin hint",
+        priority="high",
+        tag="session-only",
+    )
+
+    with patch.object(mem, "etch", new_callable=AsyncMock) as etch:
+        with patch.object(
+            mem, "_grok_decides_split", new_callable=AsyncMock
+        ) as grok:
+            result = await mem.merge(strategy="grok-decides")
+
+    grok.assert_not_called()
+    etch.assert_not_called()
+    assert result["promoted"] == 0
+    assert result["kept_ephemeral"] == 1
+
+
+async def test_merge_all_does_not_promote_session_only():
+    mem = FAFMemory("grok", api_key="test-api-key")
+    mem.scratchpad.update("keep", "holder fact", priority="high")
+    mem.scratchpad.update(
+        "session-only:1",
+        "guest fact",
+        priority="high",
+        tag="session-only",
+    )
+    captured: list = []
+
+    class FakeResult:
+        is_error = False
+        content = [type("TC", (), {"text": "ok"})()]
+
+    class FakeClient:
+        def __init__(self, transport):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args):
+            captured.append(args)
+            return FakeResult()
+
+    with patch("grok_faf_voice.memory.Client", FakeClient):
+        result = await mem.merge(strategy="merge_all")
+
+    assert result["promoted"] == 1
+    assert result["kept_ephemeral"] == 1
+    assert len(captured) == 1
+    assert "guest fact" not in captured[0]["entry"]
+
+
 async def test_merge_now_emits_hold_and_confirmation():
-    """make_merge_tool's body calls session.say twice: hold + confirmation."""
-    from grok_faf_voice.tools import make_merge_tool
+    """The listener says the hold, then the confirmation, after yes."""
+    from grok_faf_voice.tools import SAVE_SPOKEN, HolderConfirm, make_merge_tool
 
     mem = FAFMemory("grok", api_key="k")
     session = _FakeAgentSession()
 
     async def _fake_merge(*, strategy: str = "heuristic", **_):
-        # Stand-in for the real merge — return the extended shape.
         return {
             "promoted": 2,
             "discarded": 0,
@@ -1380,18 +1452,19 @@ async def test_merge_now_emits_hold_and_confirmation():
             "overall_notes": None,
         }
 
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
+
     with patch.object(mem, "merge", side_effect=_fake_merge):
         tool = make_merge_tool(mem, session)
-        # FunctionTool wraps the original; .__wrapped__ exposes it for direct invocation.
-        underlying = getattr(tool, "__wrapped__", None) or getattr(
-            tool, "fnc", None
-        ) or tool
-        if callable(underlying):
-            try:
-                await underlying(None)  # context unused
-            except TypeError:
-                # Some FunctionTool variants need keyword-only call shape
-                await underlying(context=None)
+        staged = await tool._func(None)
+        assert SAVE_SPOKEN in staged
+        await HolderConfirm(mem, session).apply_final(
+            "Yes.",
+            messages=[_Msg("assistant", SAVE_SPOKEN)],
+        )
 
     assert len(session.say_calls) == 2, session.say_calls
     assert "moment" in session.say_calls[0].lower()
@@ -1399,10 +1472,8 @@ async def test_merge_now_emits_hold_and_confirmation():
 
 
 async def test_merge_now_uses_grok_decides_strategy():
-    """Pattern B always routes through strategy='grok-decides' so the
-    LLM judgment runs (rather than the simpler heuristic split).
-    """
-    from grok_faf_voice.tools import make_merge_tool
+    """The listener routes through strategy='grok-decides'."""
+    from grok_faf_voice.tools import SAVE_SPOKEN, HolderConfirm, make_merge_tool
 
     mem = FAFMemory("grok", api_key="k")
     session = _FakeAgentSession()
@@ -1419,17 +1490,46 @@ async def test_merge_now_uses_grok_decides_strategy():
             "overall_notes": None,
         }
 
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
+
     with patch.object(mem, "merge", side_effect=_capture):
         tool = make_merge_tool(mem, session)
-        underlying = getattr(tool, "__wrapped__", None) or getattr(
-            tool, "fnc", None
-        ) or tool
-        try:
-            await underlying(None)
-        except TypeError:
-            await underlying(context=None)
+        await tool._func(None)
+        await HolderConfirm(mem, session).apply_final(
+            "Yes.",
+            messages=[_Msg("assistant", SAVE_SPOKEN)],
+        )
 
     assert captured_strategy["s"] == "grok-decides"
+
+
+async def test_merge_now_without_a_yes_does_not_write():
+    """Calling the tool before the yes does not write, and a no drops it."""
+    from grok_faf_voice.tools import SAVE_SPOKEN, HolderConfirm, make_merge_tool
+
+    mem = FAFMemory("grok", api_key="k")
+    session = _FakeAgentSession()
+
+    class _Msg:
+        def __init__(self, role: str, content: str) -> None:
+            self.role = role
+            self.content = content
+
+    with patch.object(mem, "merge", new_callable=AsyncMock) as merge:
+        tool = make_merge_tool(mem, session)
+        result = await tool._func(None)
+        assert SAVE_SPOKEN in result
+        assert mem.merge_armed
+        dropped = await HolderConfirm(mem, session).apply_final(
+            "no",
+            messages=[_Msg("assistant", SAVE_SPOKEN)],
+        )
+    merge.assert_not_called()
+    assert dropped == "Nothing was saved."
+    assert mem.merge_armed is False
 
 
 # ----------------------------------------------------------------

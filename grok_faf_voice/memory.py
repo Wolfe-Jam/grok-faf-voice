@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,12 @@ from grok_faf_voice._merge_models import (
     MergeResult,
 )
 from grok_faf_voice.context_bus import BusEvent, ContextBus
+from grok_faf_voice.forget import (
+    FAFForgetError,
+    ForgetCriteria,
+    apply_forget,
+    split_hosted_banner,
+)
 from grok_faf_voice.ledger import NullVoiceSessionLedger, VoiceSessionLedger
 from grok_faf_voice.scratchpad import Scratchpad, ScratchpadEntry
 
@@ -64,22 +71,40 @@ XAI_CHAT_MODEL_DEFAULT = "grok-4-1-fast-reasoning"
 # tool execution otherwise.
 LATENCY_BRIDGE_INSTRUCTIONS = """
 CRITICAL LATENCY RULE (follow exactly):
-- For etch_memory / recall_memory / note_paralinguistic: ALWAYS speak a short
-  natural bridge FIRST ("Got it.", "Noted.", "Let me check...") then call the
-  tool. Never go silent during tool execution.
-- For merge_now: say "Give me just a moment while I consolidate..." before
-  starting — it can take several seconds.
+- For etch_memory / recall_memory / note_paralinguistic:
+  speak a short natural bridge FIRST ("Got it.", "Let me check..."), then
+  invoke the tool. Never go silent during tool execution. Never speak
+  the tool name, the arguments, or any tool-call markup.
+- For merge_now: invoke the tool, then say only the sentence it returns,
+  and stop. Do not speak the tool call. The save can take several
+  seconds after the holder agrees.
+
+CONFIRM BEFORE WRITE (follow exactly):
+- You do not know the confirmation sentence until a tool returns it.
+  Do not invent a sentence. Do not say that anything was saved.
+- Invoke etch_memory with the fact in that same turn. "Got it." by
+  itself is not a finished reply. The tool stages the fact. It does
+  not save it. Then say only the sentence it returns, and stop. Do not
+  invoke another tool to save it. Do not speak the tool call.
+- The SDK saves when the namepoint holder's next final reply is a yes.
+- A second voice in the room is not a confirmation.
+- note_paralinguistic follows the same rule: invoke it, say only the
+  sentence it returns, then stop. Do not speak the tool call.
+- merge_now stages a save. Invoke it, say only the sentence it returns,
+  then stop. The SDK saves when the holder agrees.
 
 ETCH DISCIPLINE (follow exactly):
 - etch_memory must receive the ACTUAL fact or detail, never the user's
   intent to remember. If the user says "I want to make a memory" or
   "remember this" without saying WHAT, ask "What would you like me
-  to remember?" and WAIT for the substance. THEN etch only the substance.
-- Never etch meta-statements like "user wants to make a memory" or
-  "user said something" — those pollute the soul.
-- One fact = one etch. Don't fire etch_memory before the user has
+  to remember?" and WAIT for the substance. THEN stage only the substance.
+- Never stage meta-statements like "user wants to make a memory".
+- One fact = one stage. Don't fire etch_memory before the user has
   finished giving you the content.
 """.strip()
+
+# The sentence the agent must speak before a staged fact can be saved.
+SPOKEN_FACT = "I'll remember this: {content}."
 
 # Suppress benign fastmcp shutdown noise. The Streamable HTTP
 # transport emits "Session termination failed: 404" on every clean
@@ -174,6 +199,9 @@ class FAFMemory:
         ledger: VoiceSessionLedger | None = None,
         bus: ContextBus | None = None,
         local_path: str | Path | None = None,
+        shared_device: bool = False,
+        speaker_is_holder: bool = True,
+        child_may_be_speaking: bool = False,
     ) -> None:
         self._soul = soul
         self._api_key = api_key or os.environ.get("MCPAAS_API_KEY")
@@ -197,6 +225,18 @@ class FAFMemory:
         self._merge_completed_this_session = False
         self._merge_in_progress = False
         self._lock = asyncio.Lock()
+        # Ambient privacy. No voice-id gate: a shared device, a speaker
+        # who is not the holder, or a child in the room means this
+        # session does not etch. There is no namepoint for a child.
+        self._shared_device = shared_device
+        self._speaker_is_holder = speaker_is_holder
+        self._child_may_be_speaking = child_may_be_speaking
+        self._pending: dict[str, Any] | None = None
+        self._session_only_n = 0
+        self._merge_armed = False
+        self._last_confirm_result = ""
+        self._last_merge_result = ""
+        self._confirm: Any | None = None
 
     @property
     def soul(self) -> str:
@@ -287,6 +327,223 @@ class FAFMemory:
         )
         return text
 
+    def retention(self) -> str:
+        """``session-only`` or ``durable``.
+
+        Session-only when the device is shared, the speaker is not the
+        namepoint holder, or a child may be talking. No voice print is
+        consulted. Any user turn confirms. The second-voice rule is
+        the prompt plus the operator flags. The default is durable:
+        the holder, on their device.
+        """
+        if (
+            self._shared_device
+            or not self._speaker_is_holder
+            or self._child_may_be_speaking
+        ):
+            return "session-only"
+        return "durable"
+
+    @property
+    def pending(self) -> dict[str, Any] | None:
+        """The fact waiting for the holder to confirm, or None."""
+        return self._pending
+
+    def stage_memory(
+        self,
+        content: str,
+        *,
+        type: str = "memory",
+        tags: list[str] | None = None,
+    ) -> str:
+        """Hold a fact. Does not write the soul.
+
+        Returns the exact sentence the agent must speak before
+        :meth:`commit_staged` will save it. One trailing period is
+        taken off the fact before that sentence is built, so
+        ``Main St.`` is spoken once.
+        """
+        spoken_content = content.strip()
+        if spoken_content.endswith(".") and spoken_content[:-1].strip():
+            spoken_content = spoken_content[:-1].rstrip()
+        spoken = SPOKEN_FACT.format(content=spoken_content)
+        self._pending = {
+            "content": spoken_content,
+            "spoken": spoken,
+            "type": type,
+            "tags": list(tags or []),
+        }
+        self._note_confirm_stage()
+        return spoken
+
+    async def commit_staged(self, content: str, *, holder_confirmed: bool) -> str:
+        """Save a staged fact after the holder confirms the spoken sentence.
+
+        ``holder_confirmed`` comes from the SDK listener, which reads the
+        holder's final transcript. There is no model tool for it.
+        Session-only retention writes the scratchpad and does not call
+        :meth:`etch`.
+        """
+        pending = self._pending
+        if pending is None or pending["content"] != content:
+            raise FAFEtchError("Nothing staged matches that fact.")
+        if not holder_confirmed:
+            raise FAFEtchError(
+                "The namepoint holder has not confirmed this fact."
+            )
+        if self.retention() == "session-only":
+            self._session_only_n += 1
+            self._scratchpad.update(
+                f"session-only:{self._session_only_n}",
+                content,
+                priority=self.EPHEMERAL_PRIORITY,
+                tag=self.SESSION_ONLY_TAG,
+            )
+            self._pending = None
+            return "Held for this session only."
+        text = await self.etch(
+            content,
+            type=pending["type"],
+            tags=pending["tags"] or None,
+        )
+        self._pending = None
+        return text
+
+    def drop_pending(self) -> None:
+        """Drop a staged fact. Nothing is written."""
+        self._pending = None
+
+    async def confirm_memory(self, content: str | None = None) -> str:
+        """Operator and SDK only. Not a model tool.
+
+        A call before the holder's final yes does not write and does
+        not drop a staged fact. The session listener saves on that yes.
+        """
+        _ = content
+        return self.note_confirm_result("Nothing was saved.")
+
+    def note_confirm_result(self, text: str) -> str:
+        """Remember the last confirm outcome. Returns ``text``."""
+        self._last_confirm_result = text
+        return text
+
+    @property
+    def last_confirm_result(self) -> str:
+        """The last confirm outcome, or an empty string."""
+        return self._last_confirm_result
+
+    def _note_confirm_stage(self) -> None:
+        """Tell the confirm listener that a fact or a save was just staged."""
+        confirm = self._confirm
+        if confirm is not None:
+            confirm.note_stage()
+
+    def arm_merge(self) -> None:
+        """Remember that ``merge_now`` staged a save. The listener writes."""
+        self._merge_armed = True
+        self._note_confirm_stage()
+
+    def clear_merge_arm(self) -> None:
+        self._merge_armed = False
+
+    @property
+    def merge_armed(self) -> bool:
+        return self._merge_armed
+
+    def remember_merge_result(self, text: str) -> str:
+        """Remember the spoken merge summary. Returns ``text``."""
+        self._last_merge_result = text
+        return text
+
+    def saved_merge_result(self) -> str | None:
+        """The merge summary after this session already saved, else None."""
+        if self._merge_completed_this_session and self._last_merge_result:
+            return self._last_merge_result
+        return None
+
+    def attach_confirm(self, session: AgentSession) -> Any:
+        """Listen for the holder's next final transcript. Idempotent."""
+        if self._confirm is not None and self._confirm.session is session:
+            return self._confirm
+        from grok_faf_voice.tools import HolderConfirm
+
+        self._confirm = HolderConfirm(self, session)
+        self._confirm.attach()
+        return self._confirm
+
+    async def forget(self, namepoint: str, criteria: ForgetCriteria) -> dict[str, int | str]:
+        """Remove entries by id, tag, time range, or full wipe.
+
+        Operator and SDK only. Not a model tool. ``delete_soul`` is not
+        called. A hosted soul is rewritten with ``write_soul``
+        ``replace=true`` and ``content`` set to the new body.
+        ``get_soul`` returns the stored text (no banner). A leading
+        banner is removed only when the remainder is the soul.
+        ``write_soul`` with ``replace=true`` and ``content`` stores
+        that string as the whole soul (``env.SOULS.put``, soul name
+        lowercased). Read from ``mcpaas-cf`` ``handler.ts``. A live
+        hosted round trip was not opened.
+        A local ``.fafm`` is replaced atomically, mode 0600.
+        ``removed == 0`` does not write.
+        """
+        if not isinstance(criteria, ForgetCriteria):
+            raise FAFForgetError("criteria must be a ForgetCriteria.")
+        if criteria.is_empty():
+            raise FAFForgetError(
+                "forget needs an entry id, a tag, a time range, or wipe=True."
+            )
+        if not _same_namepoint(namepoint, self._soul):
+            raise FAFForgetError(
+                f"namepoint {namepoint!r} does not match this soul ({self._soul!r})."
+            )
+        if self._local_path is not None:
+            text = self._local_path.read_text(encoding="utf-8")
+            new_text, removed = apply_forget(text, criteria)
+            if removed:
+                _write_text_owner_only(self._local_path, new_text)
+                self._cache = new_text
+            return {"removed": removed, "namepoint": self._soul}
+
+        if not self._api_key:
+            raise FAFAuthRequiredError(
+                "forget on a hosted soul needs the Voice API key for that namepoint."
+            )
+        raw = await self.get()
+        # get_soul returns the stored soul. Strip a leading banner only
+        # when the remainder is the soul document.
+        body = split_hosted_banner(raw)
+        new_body, removed = apply_forget(body, criteria)
+        if removed == 0:
+            return {"removed": 0, "namepoint": self._soul}
+        await self._replace_soul(new_body)
+        self._cache = new_body
+        return {"removed": removed, "namepoint": self._soul}
+
+    async def _replace_soul(self, content: str) -> str:
+        """Overwrite the hosted soul. Never calls ``delete_soul``.
+
+        Contract, read from ``mcpaas-cf`` ``handler.ts`` ``write_soul``:
+        when ``replace`` is true and ``content`` is set, the server
+        does ``env.SOULS.put(soulName, replaceContent)`` and the soul
+        name is lowercased. Voice keys may write only their own
+        namepoint. A live hosted call was not opened.
+        """
+        args: dict[str, Any] = {
+            "soul": self._soul,
+            "replace": True,
+            "content": content,
+            "token": self._api_key,
+        }
+        transport = StreamableHttpTransport(
+            url=self._mcp_url, headers=_MCPAAS_MODE_HEADER
+        )
+        try:
+            async with Client(transport) as client:
+                result = await client.call_tool("write_soul", args)
+                return _first_text(result)
+        except ToolError as e:
+            raise self._wrap_tool_error(e, op="etch") from e
+
     async def get(self) -> str:
         """Read the soul's current state.
 
@@ -294,10 +551,9 @@ class FAFMemory:
         ``.fafm`` document straight off disk — no MCPaaS, no API key.
         Otherwise it reads via MCPaaS ``get_soul``.
 
-        Returns the soul body as a string. The MCPaaS path includes the
-        server's preamble before the first `\\n---\\n` separator; downstream
-        consumers can split if they want only the YAML body. The local path
-        returns the file's exact contents.
+        Returns the soul body as a string. Current MCPaaS ``get_soul``
+        returns the stored text and does not add a banner. The local
+        path returns the file's exact contents.
         """
         if self._local_path is not None:
             text = self._local_path.read_text(encoding="utf-8")
@@ -331,8 +587,8 @@ class FAFMemory:
         Examples
         --------
         >>> mem = FAFMemory.from_file("claude-code-wolfejam.fafm")
-        >>> body = await mem.get()                  # the file's soul body
-        >>> recall = await mem.recall_for_prompt()  # ready for the prompt
+        >>> body = await mem.get()             # the file's soul body
+        >>> recall = await mem.recall_for_prompt()  # not for instructions
 
         Parameters
         ----------
@@ -363,7 +619,7 @@ class FAFMemory:
         >>> path = await mem.to_file("backup.fafm")
         """
         p = Path(path)
-        p.write_text(await self.get(), encoding="utf-8")
+        _write_text_owner_only(p, await self.get())
         return p
 
     # -- parsed accessors -------------------------------------------------
@@ -484,19 +740,26 @@ class FAFMemory:
         ...     "tone", "frustrated", context="checkout flow"
         ... )
         """
+        entry, tags = self.format_paralinguistic_entry(
+            marker_type, value, context=context
+        )
+        return await self.etch(entry, type="paralinguistic", tags=tags)
+
+    def format_paralinguistic_entry(
+        self,
+        marker_type: str,
+        value: str,
+        *,
+        context: str | None = None,
+    ) -> tuple[str, list[str]]:
+        """The entry text and tags, without writing."""
         entry_parts = [
             self.PARALINGUISTIC_PREFIX,
             f"{marker_type}: {value}",
         ]
         if context:
             entry_parts.append(f"— {context}")
-        entry = " ".join(entry_parts)
-
-        return await self.etch(
-            entry,
-            type="paralinguistic",
-            tags=[self.PARALINGUISTIC_TAG, marker_type],
-        )
+        return " ".join(entry_parts), [self.PARALINGUISTIC_TAG, marker_type]
 
     # ----------------------------------------------------------------
     # Smart Merge Engine
@@ -508,6 +771,20 @@ class FAFMemory:
 
     MERGE_TAG = "merged"
     EPHEMERAL_PRIORITY = "ephemeral"
+    SESSION_ONLY_TAG = "session-only"
+
+    def _hold_session_only(
+        self, entries: dict[str, ScratchpadEntry]
+    ) -> tuple[dict[str, ScratchpadEntry], list]:
+        """Pull session-only entries out before any strategy sees them."""
+        eligible: dict[str, ScratchpadEntry] = {}
+        held: list = []
+        for key, entry in entries.items():
+            if entry.tag == self.SESSION_ONLY_TAG:
+                held.append((key, entry))
+            else:
+                eligible[key] = entry
+        return eligible, held
 
     async def merge(
         self,
@@ -524,10 +801,13 @@ class FAFMemory:
 
         - ``"grok-decides"``: send the scratchpad to Grok with a
           meta-prompt asking which entries are worth permanent
-          memory. Smarter, but costs tokens. Returns conservatively
-          on parse failure (keeps everything).
+          memory. Smarter, but costs tokens. An entry the model does
+          not decide on stays ephemeral.
 
-        - ``"merge_all"``: promote every entry regardless of metadata.
+        - ``"merge_all"``: promote every entry regardless of priority.
+
+        Entries tagged ``session-only`` are never promoted, on every
+        strategy. They stay out of the soul.
 
         Clears the scratchpad after a successful merge and sets
         ``_merge_completed_this_session`` so the auto-merge shutdown
@@ -558,25 +838,40 @@ class FAFMemory:
                 "overall_notes": None,
             }
 
+        if strategy not in {"heuristic", "grok-decides", "merge_all"}:
+            raise ValueError(
+                f"Unknown merge strategy: {strategy!r}. "
+                f"Valid: 'heuristic', 'grok-decides', 'merge_all'."
+            )
+
+        eligible, held = self._hold_session_only(entries)
         overall_notes: str | None = None
-        if strategy == "heuristic":
-            promoted, discarded = self._heuristic_split(entries)
+        if not eligible:
+            promoted, discarded = [], []
+        elif strategy == "heuristic":
+            promoted, discarded = self._heuristic_split(eligible)
         elif strategy == "grok-decides":
             try:
                 promoted, discarded, overall_notes = (
-                    await self._grok_decides_split(entries, chat_model=chat_model)
+                    await self._grok_decides_split(eligible, chat_model=chat_model)
                 )
             except Exception as e:
                 raise FAFMergeError(
                     f"grok-decides strategy failed: {e}. Try strategy='heuristic'."
                 ) from e
-        elif strategy == "merge_all":
-            promoted, discarded = list(entries.items()), []
         else:
-            raise ValueError(
-                f"Unknown merge strategy: {strategy!r}. "
-                f"Valid: 'heuristic', 'grok-decides', 'merge_all'."
-            )
+            promoted, discarded = list(eligible.items()), []
+
+        # A strategy must not write a session-only entry even if it
+        # returns one. Those facts never reach the permanent soul.
+        safe: list = []
+        for key, entry in promoted:
+            if entry.tag == self.SESSION_ONLY_TAG:
+                held.append((key, entry))
+            else:
+                safe.append((key, entry))
+        promoted = safe
+        discarded = list(discarded) + held
 
         # Etch each promoted entry with [merged] tag for identification
         for key, entry in promoted:
@@ -693,10 +988,10 @@ class FAFMemory:
             else:  # keep_ephemeral
                 discarded.append((dec.entry_id, entry))
 
-        # Conservative fallback for any entry the model didn't decide on.
+        # An entry the model did not decide on stays ephemeral.
         for key, entry in entries.items():
             if key not in seen:
-                promoted.append((key, entry))
+                discarded.append((key, entry))
 
         return promoted, discarded, result.overall_notes
 
@@ -744,28 +1039,25 @@ class FAFMemory:
         *,
         strategy: str = "heuristic",
     ) -> None:
-        """Register an awaitable shutdown callback that runs ``merge()``.
+        """Register a shutdown callback that holds the scratchpad.
+
+        It does not call ``merge()`` and it does not etch. A write happens
+        only after the agent speaks the fact and the namepoint holder
+        confirms, or when the holder asks ``merge_now`` to save the
+        scratchpad. The callback logs status ``held``.
 
         Uses ``ctx.add_shutdown_callback`` (the load-bearing primitive on
-        the LiveKit ``JobContext``) rather than ``session.on("close")`` —
-        the worker awaits shutdown callbacks up to
-        ``shutdown_process_timeout`` (~10s default), so a multi-second
-        merge can finish cleanly on every termination path (graceful
-        close, user disconnect, room destroy, worker drain).
+        the LiveKit ``JobContext``) rather than ``session.on("close")``.
+        ``session.on("close")`` is kept for observability only.
 
         Composes with explicit ``merge_now``: an async lock + two guard
         flags ensure the shutdown callback no-ops when the user already
-        triggered a merge mid-conversation. ``session.on("close")`` is
-        kept for observability only.
-
-        Every attempt is recorded in the configured ledger (success and
-        failure paths). Failures inside the merge are caught and logged
-        — never re-raised, so shutdown completes cleanly.
+        triggered a merge mid-conversation.
 
         Resets the per-session merge guard flags so reusing one
         ``FAFMemory`` across multiple sessions (the README pattern —
         module-scope ``mem`` + per-session ``entrypoint``) doesn't
-        cause session 2+ to no-op when the prior session already merged.
+        cause session 2+ to no-op when the prior session already finished.
         """
         self._merge_completed_this_session = False
         self._merge_in_progress = False
@@ -781,32 +1073,32 @@ class FAFMemory:
                         return
                 self._merge_in_progress = True
 
-            await self._bus.emit_merge_starting(reason="auto-merge on shutdown")
+            # strategy is accepted so existing callers keep working.
+            # Shutdown does not merge. The holder confirms, or calls merge_now.
+            _ = strategy
             try:
-                result = await self.merge(strategy=strategy)
                 await self.ledger.log_merge_attempt(
                     session_id=getattr(session, "id", "unknown"),
                     soul=self._soul,
-                    status="completed",
-                    promoted=result.get("promoted", 0),
-                    merged=result.get("merged", 0),
-                    kept_ephemeral=result.get("kept_ephemeral", 0),
-                    overall_notes=result.get("overall_notes"),
+                    status="held",
+                    promoted=0,
+                    merged=0,
+                    kept_ephemeral=len(self._scratchpad),
+                    overall_notes=(
+                        "Confirm-before-write: scratchpad held. "
+                        "Nothing is etched until the holder confirms."
+                    ),
                 )
-                await self._bus.emit_merge_completed(result=result)
+                self._merge_completed_this_session = True
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).warning(
-                    "auto-merge failed (non-fatal): %s", exc
+                    "shutdown hold failed (non-fatal): %s", exc
                 )
                 await self.ledger.log_merge_attempt(
                     session_id=getattr(session, "id", "unknown"),
                     soul=self._soul,
                     status="partial_or_failed",
                     error=str(exc),
-                )
-                await self._bus.emit(
-                    BusEvent.MERGE_COMPLETED,
-                    {"error": str(exc), "status": "partial_or_failed"},
                 )
             finally:
                 self._merge_in_progress = False
@@ -978,28 +1270,17 @@ class FAFMemory:
             "for the actual content."
         ),
     ) -> str:
-        """Return a formatted recall block ready for system-prompt injection.
+        """Return the soul body for a later recall, not for ``instructions``.
 
-        Fetches the live soul body and wraps it with a header so the
-        model treats it as prior context. When the soul is empty or the
-        read fails (no API key, network blip, ledger gap), returns the
-        ``empty_message`` so the agent still opens cleanly — never raises.
+        Do not call this at session open, and do not place the return
+        value in ``session.instructions``. The open path is the standing
+        string. The long tail is the ``recall_memory`` tool on a later
+        turn, and only when tools are enabled. The first reply should
+        not wait on this call.
 
-        The caller composes this into the Agent's instructions::
-
-            agent = Agent(
-                instructions=(
-                    f"{faf.system_prompt()}\\n\\n"
-                    f"{await mem.recall_for_prompt()}\\n\\n"
-                    f"{LATENCY_BRIDGE_INSTRUCTIONS}"
-                ),
-                tools=mem.tools(session),
-            )
-
-        This is the bridge between persistent soul state and the
-        in-context state the realtime model actually sees. Without it,
-        the SDK persists memories perfectly but the agent opens each
-        session blind.
+        Fetches the live soul body and wraps it with a header. When the
+        soul is empty or the read fails, returns ``empty_message`` and
+        does not raise.
 
         Parameters
         ----------
@@ -1013,7 +1294,7 @@ class FAFMemory:
         -------
         str
             Either ``"<header>:\\n<body>"`` or ``empty_message``.
-            Always safe to inline into instructions.
+            Not for ``instructions``.
         """
         try:
             body = await self.get()
@@ -1040,9 +1321,8 @@ class FAFMemory:
     async def paralinguistic_summary(self, *, max_recent: int = 5) -> str:
         """Build a one-line synopsis of recent paralinguistic markers.
 
-        Suitable for injection into the next session's system prompt
-        so the agent opens with awareness of HOW the user has been
-        sounding across prior sessions.
+        For a later recall. Do not place it in ``session.instructions``.
+        The open path stays the standing string.
 
         Returns an empty string if the soul has no paralinguistic
         entries yet — caller can compose accordingly.
@@ -1067,14 +1347,14 @@ class FAFMemory:
         """Return LiveKit `@function_tool` wrappers for the agent.
 
         Returns four tools: ``etch_memory`` + ``recall_memory`` +
-        ``note_paralinguistic`` + ``merge_now``. Pass into the Agent
-        (or AgentSession) ``tools=`` list to expose memory commands
-        to the voice agent.
+        ``note_paralinguistic`` + ``merge_now``. ``confirm_memory`` is
+        not among them. ``forget`` is not among them. The SDK confirms
+        from the next final user transcript. Pass the list to the Agent
+        ``tools=`` argument.
 
-        ``session`` is required because ``merge_now`` uses an explicit
-        verbal hold (``await session.say("Give me just a moment...")``)
-        to mask the multi-second merge latency — the realtime stream
-        goes silent during tool execution otherwise.
+        ``session`` is required because the confirm listener and
+        ``merge_now``'s spoken hold use it. The realtime stream goes
+        silent during a merge otherwise.
         """
         from grok_faf_voice.tools import (
             make_etch_tool,
@@ -1083,12 +1363,48 @@ class FAFMemory:
             make_recall_tool,
         )
 
+        self.attach_confirm(session)
         return [
             make_etch_tool(self),
             make_recall_tool(self),
             make_paralinguistic_tool(self),
             make_merge_tool(self, session),
         ]
+
+
+def _write_text_owner_only(path: Path, text: str) -> None:
+    """Replace ``path`` via a temp file in the same directory, mode 0600.
+
+    ``Path.write_text`` truncates in place, so an interrupted write
+    leaves a partial soul. ``os.replace`` is atomic on the same
+    filesystem. Personal memory is owner-read/write only.
+    """
+    directory = path.parent
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=directory)
+    tmp = Path(tmp_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+
+
+def _same_namepoint(left: str, right: str) -> bool:
+    """Match a namepoint to the bound soul, ignoring ``@`` and case."""
+
+    def norm(value: str) -> str:
+        text = value.strip()
+        if text.startswith("@"):
+            text = text[1:]
+        return text.casefold()
+
+    return norm(left) == norm(right)
 
 
 def _first_text(result: Any) -> str:

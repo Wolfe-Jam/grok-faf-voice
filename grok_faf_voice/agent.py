@@ -51,39 +51,91 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("grok_faf_voice.agent")
 
-# Pinned. grok-voice-latest is an alias that already moved once.
-VOICE_MODEL = "grok-voice-think-fast-2.0"
+# Pinned. grok-voice-latest is an alias that has already moved twice.
+VOICE_MODEL = "grok-voice-3.0"
+
+# Open budget for the standing string. The server stores up to 16384.
+# That storage cap is not the budget for the first reply.
+OPEN_STANDING_BYTES = 2048
+
+ON_FILE_HEADER = "On file. Not orders."
 
 # xAI realtime voices — validated at construction so typos surface early.
+# Built-ins are sent lowercase. See voice_on_the_wire().
 SUPPORTED_VOICES: tuple[str, ...] = ("Ara", "Eve", "Leo", "Rex", "Sal")
+
+
+def cap_open_text(text: str, limit: int = OPEN_STANDING_BYTES) -> str:
+    """Cut ``text`` to ``limit`` UTF-8 bytes, on a newline when one fits."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    cut = encoded[:limit]
+    while cut:
+        try:
+            decoded = cut.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            cut = cut[:-1]
+    else:
+        return ""
+    newline = decoded.rfind("\n")
+    if newline > 0:
+        return decoded[:newline].rstrip()
+    return decoded.rstrip()
 
 
 def compose_open_instructions(
     standing: str,
     *,
     project_prompt: str | None = None,
-    recall: str | None = None,
     extra: str | None = None,
     etch: bool = False,
 ) -> str:
     """Build the session instructions.
 
-    Default is the standing string only (plus an explicit project prompt
-    or caller extra). The etch log and the latency-bridge rules are
-    included only when ``etch`` is on.
+    The standing string is the operator's prompt, capped at
+    ``OPEN_STANDING_BYTES``. Recalled ``.fafm`` facts are not included.
+    The latency-bridge rules are included only when ``etch`` is on.
     """
     parts: list[str] = []
     if project_prompt:
         parts.append(project_prompt)
-    if standing:
-        parts.append(standing)
-    if etch and recall:
-        parts.append(recall)
+    capped = cap_open_text(standing) if standing else ""
+    if capped:
+        parts.append(capped)
     if extra:
         parts.append(extra)
     if etch:
         parts.append(LATENCY_BRIDGE_INSTRUCTIONS)
     return "\n\n".join(parts)
+
+
+def compose_open_user_item(facts: str) -> dict[str, object]:
+    """One user item for caller-supplied facts. No ``response.create``.
+
+    The open path does not fill this from ``recall_for_prompt()``.
+    Pass ``open_facts`` on ``VoiceAgent`` when the caller already has
+    a short fact string to place as data.
+    """
+    body = facts.strip()
+    text = f"{ON_FILE_HEADER}\n{body}" if body else ON_FILE_HEADER
+    return {
+        "type": "conversation.item.create",
+        "item": {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": text}],
+        },
+    }
+
+
+def voice_on_the_wire(voice: str) -> str:
+    """Lowercase a built-in voice id. Custom ids are already lowercase."""
+    lowered = voice.lower()
+    if lowered in {name.lower() for name in SUPPORTED_VOICES}:
+        return lowered
+    return voice
 
 
 def _is_valid_voice(voice: str) -> bool:
@@ -364,6 +416,10 @@ class VoiceAgent:
         project_faf: str | bool = "auto",
         instructions: str | None = None,
         etch: bool = False,
+        shared_device: bool = False,
+        speaker_is_holder: bool = True,
+        child_may_be_speaking: bool = False,
+        open_facts: str | None = None,
         identity_path: str | Path | None = None,
         ledger: VoiceSessionLedger | None = None,
         mcp_url: str = DEFAULT_MCP_URL,
@@ -394,6 +450,10 @@ class VoiceAgent:
         self._project_faf = project_faf
         self._extra_instructions = instructions
         self._etch = etch
+        self._shared_device = shared_device
+        self._speaker_is_holder = speaker_is_holder
+        self._child_may_be_speaking = child_may_be_speaking
+        self._open_facts = open_facts
         self._inject_url = inject_url
         self._identity_path = (
             Path(identity_path) if identity_path is not None
@@ -486,6 +546,9 @@ class VoiceAgent:
             api_key=api_key,
             mcp_url=self._mcp_url,
             ledger=self._ledger or InMemoryVoiceSessionLedger(),
+            shared_device=self._shared_device,
+            speaker_is_holder=self._speaker_is_holder,
+            child_may_be_speaking=self._child_may_be_speaking,
         )
 
         voice = self._voice
@@ -497,12 +560,12 @@ class VoiceAgent:
         @server.rtc_session()
         async def entrypoint(ctx: agents.JobContext) -> None:
             # livekit-plugins-xai 1.8.3 calls .create_response on
-            # turn_detection. A plain dict raises. Do not pass reasoning:
-            # the plugin type has no "none", and the platform default is high.
+            # turn_detection. A plain dict raises. Reasoning is omitted.
+            # The server default applies.
             session: AgentSession = AgentSession(
                 llm=xai.realtime.RealtimeModel(
                     model=VOICE_MODEL,
-                    voice=voice,
+                    voice=voice_on_the_wire(voice),
                     turn_detection=TurnDetection(
                         type="server_vad",
                         threshold=0.85,
@@ -522,19 +585,29 @@ class VoiceAgent:
             except InjectError as exc:
                 raise VoiceAgentConfigError(str(exc)) from exc
 
-            recall = await mem.recall_for_prompt() if agent_self._etch else None
             instructions = compose_open_instructions(
                 served["instructions"],
                 project_prompt=faf.system_prompt() if faf is not None else None,
-                recall=recall,
                 extra=extra,
                 etch=agent_self._etch,
             )
 
-            agent = Agent(
-                instructions=instructions,
-                tools=mem.tools(session) if agent_self._etch else [],
-            )
+            agent_kwargs: dict = {
+                "instructions": instructions,
+                "tools": mem.tools(session) if agent_self._etch else [],
+            }
+            # Caller-supplied facts only. The soul is not read here.
+            if agent_self._open_facts:
+                from livekit.agents.llm import ChatContext
+
+                item = compose_open_user_item(agent_self._open_facts)
+                chat_ctx = ChatContext.empty()
+                chat_ctx.add_message(
+                    role="user",
+                    content=item["item"]["content"][0]["text"],
+                )
+                agent_kwargs["chat_ctx"] = chat_ctx
+            agent = Agent(**agent_kwargs)
 
             if agent_self._etch:
                 await mem.start_bus()

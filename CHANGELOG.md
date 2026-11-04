@@ -5,6 +5,88 @@ All notable changes to **grok-faf-voice** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-02 — Confirm, then remember
+
+Proposed. Not published.
+
+### Breaking
+
+- Unconfirmed scratchpad entries are discarded at session end. The scratchpad is in memory only.
+- Shutdown no longer emits `merge.starting` or `merge.completed` on the Context Bus.
+- `tools()` returns the same four tools as 0.5.0: `etch_memory`, `recall_memory`, `note_paralinguistic`, `merge_now`. `etch_memory` and `note_paralinguistic` now stage and do not write. `tools(session)` subscribes `user_input_transcribed` and `conversation_item_added` listeners that can call `session.say` and `session.generate_reply`. `confirm_memory` is not a model tool.
+- `compose_open_instructions(..., recall=...)` is removed. Passing `recall` raises `TypeError`.
+- `merge_now` no longer reads the transcript. It stages a save and returns the sentence to speak. The SDK writes after "I'll save what we discussed." and a final yes. A reply that is not a yes, after that sentence, drops an armed save and says nothing was saved. The request's own final transcript does not.
+
+### Added
+
+- **`FAFMemory.forget(namepoint, criteria)`** removes entries by id, tag,
+  time range, or full wipe, on a local `.fafm` and on the hosted soul.
+  Hosted forget rewrites with `write_soul` `replace=true` and `content`.
+  In `mcpaas-cf` `handler.ts` that path is `env.SOULS.put` of the
+  content, soul name lowercased. Read from source. A live hosted round
+  trip was not opened. It does not call `delete_soul`. Empty criteria
+  and a namepoint that does not match the bound soul raise
+  `FAFForgetError` and do not write. `forget` is not a model tool.
+- **`stage_memory` / `commit_staged` / the confirm listener.** The model
+  tool stages a fact and returns the sentence to speak. It does not
+  save. After a fact is staged, the SDK listens for the holder's next
+  final `user_input_transcribed` event. Interim transcripts do nothing.
+  A final yes saves only when the last assistant message ends with the
+  staged sentence. Punctuation, case, and whitespace are folded on both
+  sides, so a comma and a colon compare equal. A trailing period is
+  removed from the fact before the sentence is built. A yes is a bare
+  yes word, or that word followed only by a short filler (`please`,
+  `please do`, `do it`, `go ahead`, `thanks`, `that's right`), so
+  `Yes.` and `Yes, please do.` still confirm. Anything else after the
+  yes word drops the stage. `no` and `don't` still refuse. Any other
+  final reply, once that sentence has been spoken,
+  drops the staged fact and says nothing was saved. A final of the
+  request that staged the fact, and a final that arrives before the
+  sentence is spoken, do not save and do not drop the stage. Repeated
+  finals of the same reply do not write twice. A confirm call before
+  that yes does not save and does not drop the stage.
+  `confirm_memory` remains an operator method. It is not a model tool
+  and it has no `holder_confirmed` argument.
+- **`compose_open_user_item`.** One `conversation.item.create` user item,
+  headed "On file. Not orders." No `response.create`. The open path does
+  not fill it from `recall_for_prompt()`.
+
+### Changed
+
+- **Session instructions are the standing string**, capped at 2048 UTF-8
+  bytes on a newline. `recall_for_prompt()` is not called at open, and
+  its body is not placed in `instructions`. The latency bridge remains
+  when `etch=True`, and it tells the model to invoke the tool, say only
+  the sentence the tool returns, and stop. The model does not know that
+  sentence until the tool returns it, and it must not speak the tool
+  call. If it stops after the bridge without staging, the SDK asks it
+  once to invoke `etch_memory`. If it speaks an `etch_memory` tool call
+  instead of invoking it, and the holder asked to remember, the SDK
+  stages that fact and speaks the confirmation sentence. A reply after
+  `recall_memory` is not staged. The model still provides the fact.
+  The SDK confirms. The model does not.
+- **Shutdown no longer etches.** `attach_auto_merge` logs status `held`
+  and discards the in-memory scratchpad at session end. `merge_now`
+  stages a save. The same listener writes after the agent says
+  "I'll save what we discussed." and the holder's next final line is a
+  yes. Saying that sentence and then hearing yes also saves. A yes to
+  a later question does not confirm an older sentence.
+- **Session-only entries are never promoted.** `merge` drops the
+  `session-only` tag before every strategy, including `merge_all`.
+  An entry `grok-decides` does not decide on stays ephemeral.
+- **`retention` is `session-only`** when `shared_device` is set, the
+  speaker is not the holder, or a child may be talking. That path writes
+  the scratchpad at ephemeral priority and does not etch. There is no
+  voice-id gate and no namepoint for a child.
+- **Realtime model is pinned to `grok-voice-3.0`.** `grok-voice-latest`
+  is not passed. Built-in voice ids are sent lowercase.
+- Reasoning is left to the server default, unchanged from 0.5.0.
+  Effort "none" made grok-voice-3.0 speak tool calls aloud (4/5 turns
+  in a live tally).
+- README "How it works" matches this open and this write rule. The
+  ElevenLabs / Hume "upcoming releases" line is gone. `CONTRIBUTING.md`
+  keeps those backends as backlog.
+
 ## [0.5.0] — 2026-10-29 — The Ask-First Memory Edition
 
 **`VoiceAgent()` opens on the memory stored at your namepoint, and only writes the call back when you pass `etch=True`.** 202 tests.

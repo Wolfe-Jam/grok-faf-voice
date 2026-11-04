@@ -12,10 +12,9 @@ Run::
 In session 1, speak with energy — frustrated, excited, hurried, calm.
 The agent will call `note_paralinguistic` when it notices.
 
-In session 2 (different day), the agent opens with awareness:
-
-    "Last time you sounded frustrated about the checkout flow — should
-     we revisit, or fresh topic today?"
+A later turn can call recall_memory. The open prompt does not carry
+the soul. note_paralinguistic stages a marker; it is saved only after
+the agent speaks it and the namepoint holder confirms.
 
 This is the live, audio-aware, session-persistent layer that the
 static MCP can't provide.
@@ -43,24 +42,14 @@ server = AgentServer()
 
 @server.rtc_session()
 async def entrypoint(ctx: agents.JobContext):
-    # Compose system prompt: static .faf + paralinguistic memory of
-    # prior sessions. The summary is empty if there's nothing yet, so
-    # this composition works clean from the very first session.
-    base_prompt = faf.system_prompt()
-    para_summary = await mem.paralinguistic_summary()
-
-    instructions = base_prompt
-    if para_summary:
-        instructions += f"\n\n{para_summary}"
-
     session = AgentSession(
         llm=xai.realtime.RealtimeModel(voice="Ara"),
     )
     await session.start(
         room=ctx.room,
         agent=Agent(
-            instructions=instructions,
-            tools=mem.tools(),  # etch + recall + note_paralinguistic
+            instructions=faf.system_prompt(),
+            tools=mem.tools(session),
         ),
     )
 
